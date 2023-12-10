@@ -17,9 +17,15 @@ class WeatherApp:
             else:
                 print("Please enter a valid zip code")
 
-    def getFiveHour(self, zip_code):
-        url = f"{self.base_url}forecast?access_key={self.api_key}&query={zip_code}&hourly=1"
+    def getCurrentWeather(self, zip_code):
+        url = f"{self.base_url}forecast?access_key={self.api_key}&query={zip_code}"
         response = requests.get(url)
         data = response.json()
-
         print(data)
+        print(data['location']['name'])
+        print(data['location']['localtime'])
+        print(data['current']['temperature'])
+        print(data['current']['weather_descriptions'])
+        #print(data['localtime'])
+        #print(data['forecast'])
+        #print(data['current'])
