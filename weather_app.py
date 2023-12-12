@@ -9,6 +9,7 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 import requests
 
+
 class WeatherAppLayout(GridLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -35,7 +36,7 @@ class WeatherAppLayout(GridLayout):
             response.raise_for_status()
 
         except Exception as err:
-            self.weather_display.text = f'An error occured: {err}'
+            self.weather_display.text = f'An error occurred: {err}'
             return
 
         data = response.json()
@@ -47,6 +48,7 @@ class WeatherAppLayout(GridLayout):
 class WeatherApp(App):
     def build(self):
         return WeatherAppLayout()
+
 
 if __name__ == '__main__':
     WeatherApp().run()
