@@ -14,7 +14,7 @@ class WeatherAppLayout(GridLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.cols = 2
-        self.api_key = '0bec28f01706819cc9e739dd721e8f12'
+        self.api_key = ''
         self.base_url = "http://api.weatherstack.com/"
 
         self.zip_code = TextInput(multiline=False)
