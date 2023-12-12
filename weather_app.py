@@ -3,6 +3,7 @@ A simple weather app, enter a zip code and get a forecast!
 '''
 
 import requests
+from kivy.app import App
 
 class WeatherApp:
     def __init__(self, api_key):
