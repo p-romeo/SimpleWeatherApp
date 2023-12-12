@@ -23,23 +23,30 @@ class WeatherAppLayout(GridLayout):
         self.weather_display = Label(text='')
         self.add_widget(self.weather_display)
 
-        self.get_weather_button
+        self.get_weather_button = Button(text='Get Weather')
+        self.get_weather_button.bind(on_press=self.get_weather)
+        self.add_widget(self.get_weather_button)
 
+    def get_weather(self, instance):
+        zip_code = self.zip_code.text
+        url = f"{self.base_url}forecast/current?access_key={self.api_key}&query={zip_code}"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
 
-class WeatherApp:
-    def __init__(self, api_key, base_url):
-        self.api_key = api_key
-        self.base_url = base_url
+        except Exception as err:
+            self.weather_display.text = f'An error occured: {err}'
+            return
 
-    def getCurrentWeather(self, zip_code):
-        url = f"{self.base_url}forecast?access_key={self.api_key}&query={zip_code}"
-        response = requests.get(url)
         data = response.json()
-        print(data)
-        print(data['location']['name'])
-        print(data['location']['localtime'])
-        print(data['current']['temperature'])
-        print(data['current']['weather_descriptions'])
-        #print(data['localtime'])
-        #print(data['forecast'])
-        #print(data['current'])
+        self.weather_display.text = (f"Weather at {data['location']['name']}, {data['location']['localtime']}: "
+                                     f"{data['current']['temperature']} degrees,"
+                                     f" {data['current']['weather_descriptions']}")
+
+
+class WeatherApp(App):
+    def build(self):
+        return WeatherAppLayout()
+
+if __name__ == '__main__':
+    WeatherApp().run()
