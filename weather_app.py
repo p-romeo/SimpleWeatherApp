@@ -30,11 +30,13 @@ class WeatherAppLayout(GridLayout):
 
     def get_weather(self, instance):
         zip_code = self.zip_code.text
-        url = f"{self.base_url}forecast/current?access_key={self.api_key}&query={zip_code}"
+        if len(zip_code) != 5 or not zip_code.isnumeric():
+            self.weather_display.text = "Invalid Zip Code"
+            return
+        url = f"{self.base_url}current?access_key={self.api_key}&query={zip_code}"
         try:
             response = requests.get(url)
             response.raise_for_status()
-
         except Exception as err:
             self.weather_display.text = f'An error occurred: {err}'
             return

@@ -11,7 +11,7 @@ def getZipCode():
             print("Please enter a valid zip code")
 
 
-api_key = '0bec28f01706819cc9e739dd721e8f12'
+api_key = '8f9676b50dfb0acf1ba1199542313e27'
 base_url = "http://api.weatherstack.com/"
 app = weather_app.WeatherApp(api_key, base_url)
 zip_code = getZipCode()
