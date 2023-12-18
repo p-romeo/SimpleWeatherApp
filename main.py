@@ -1,20 +1,22 @@
-'''
+"""
 A simple weather app, enter a zip code and get a forecast!
-'''
+"""
 
-from kivy.app import App
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.textinput import TextInput
-from kivy.uix.label import Label
-from kivy.uix.button import Button
-from kivy.uix.image import AsyncImage
+import os
+
 import requests
 from dotenv import load_dotenv
-import os
+from kivy.app import App
+from kivy.uix.button import Button
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.image import AsyncImage
+from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
 
 load_dotenv()
 
-api_key = os.getenv('weather_stack_api_key')
+api_key = os.getenv('WEATHERSTACK_API_KEY')
+# noinspection HttpUrlsUsage
 base_url = 'http://api.weatherstack.com/'
 
 
@@ -40,6 +42,7 @@ class WeatherAppLayout(GridLayout):
         self.get_weather_button.bind(on_press=self.get_weather)
         self.add_widget(self.get_weather_button)
 
+    # noinspection PyUnusedLocal
     def get_weather(self, instance):
         zip_code = self.zip_code.text
         if len(zip_code) != 5 or not zip_code.isnumeric():
@@ -60,9 +63,9 @@ class WeatherAppLayout(GridLayout):
             fahrenheit = (temperature * 9 / 5) + 32
 
             self.weather_display.text = (f"Weather at {data['location']['name']}, {data['location']['region']} \n"
-                                     f"{data['location']['localtime']} \n"
-                                     f"{fahrenheit} degrees \n"
-                                     f"{data['current']['weather_descriptions'][0]}")
+                                         f"{data['location']['localtime']} \n"
+                                         f"{fahrenheit} degrees \n"
+                                         f"{data['current']['weather_descriptions'][0]}")
 
             weather_icon_url = data['current']['weather_icons'][0]
             self.weather_image.source = weather_icon_url
