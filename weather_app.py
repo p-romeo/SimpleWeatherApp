@@ -14,10 +14,11 @@ class WeatherAppLayout(GridLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.cols = 2
-        self.api_key = ''
+        self.api_key = '3fd394fd91eb46557abe94f7fefb5e3e'
         self.base_url = "http://api.weatherstack.com/"
 
         self.zip_code = TextInput(multiline=False)
+        self.zip_code.bind(on_text_validate=self.get_weather)
         self.add_widget(Label(text="Enter Zip Code:"))
         self.add_widget(self.zip_code)
 
@@ -27,6 +28,7 @@ class WeatherAppLayout(GridLayout):
         self.get_weather_button = Button(text='Get Weather')
         self.get_weather_button.bind(on_press=self.get_weather)
         self.add_widget(self.get_weather_button)
+
 
     def get_weather(self, instance):
         zip_code = self.zip_code.text
