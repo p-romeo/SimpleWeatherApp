@@ -68,6 +68,8 @@ logger.debug(f"Using API base URL: {base_url}")
 # Set window size and background color
 Window.size = (400, 600)
 Window.clearcolor = get_color_from_hex('#f0f0f0')
+# Ensure proper window density
+Window._density = 1.0 if not Window._density else Window._density
 
 class WeatherAppLayout(BoxLayout):
     def __init__(self, **kwargs):
@@ -282,6 +284,12 @@ class WeatherApp(App):
 if __name__ == '__main__':
     try:
         logger.debug("Starting WeatherApp")
+        logger.debug(f"Window density before app start: {Window._density}")
+        logger.debug(f"Window size before app start: {Window.size}")
         WeatherApp().run()
     except Exception as e:
         logger.error("Application crashed", exc_info=True)
+        if hasattr(Window, '_density'):
+            logger.error(f"Window density at crash: {Window._density}")
+        if hasattr(Window, 'size'):
+            logger.error(f"Window size at crash: {Window.size}")
