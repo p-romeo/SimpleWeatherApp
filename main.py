@@ -6,6 +6,7 @@ import os
 import logging
 import json
 from pathlib import Path
+from typing import List, Dict
 
 import requests
 from dotenv import load_dotenv
@@ -16,8 +17,50 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.image import AsyncImage
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
+from kivy.uix.scrollview import ScrollView
 from kivy.graphics import Color, Rectangle
 from kivy.utils import get_color_from_hex
+
+class LocationStorage:
+    def __init__(self, filename: str = "saved_locations.json"):
+        self.filename = filename
+        self.locations: Dict[str, str] = {}  # zip_code -> location_name
+        self.load_locations()
+    
+    def load_locations(self) -> None:
+        """Load saved locations from JSON file"""
+        try:
+            if os.path.exists(self.filename):
+                with open(self.filename, 'r') as f:
+                    self.locations = json.load(f)
+                logger.debug(f"Loaded {len(self.locations)} locations from {self.filename}")
+        except Exception as e:
+            logger.error(f"Failed to load locations: {e}")
+            self.locations = {}
+    
+    def save_locations(self) -> None:
+        """Save locations to JSON file"""
+        try:
+            with open(self.filename, 'w') as f:
+                json.dump(self.locations, f, indent=2)
+            logger.debug(f"Saved {len(self.locations)} locations to {self.filename}")
+        except Exception as e:
+            logger.error(f"Failed to save locations: {e}")
+    
+    def add_location(self, zip_code: str, location_name: str) -> None:
+        """Add a new location"""
+        self.locations[zip_code] = location_name
+        self.save_locations()
+    
+    def remove_location(self, zip_code: str) -> None:
+        """Remove a location"""
+        if zip_code in self.locations:
+            del self.locations[zip_code]
+            self.save_locations()
+    
+    def get_locations(self) -> Dict[str, str]:
+        """Get all saved locations"""
+        return self.locations
 
 # Configure detailed logging
 logging.basicConfig(
@@ -66,7 +109,9 @@ base_url = 'http://api.weatherstack.com/current'
 logger.debug(f"Using API base URL: {base_url}")
 
 # Set window size and background color
-Window.size = (400, 600)
+Window.size = (800, 900)
+Window.minimum_width = 400
+Window.minimum_height = 600
 Window.clearcolor = get_color_from_hex('#f0f0f0')
 # Ensure proper window density
 Window._density = 1.0 if not Window._density else Window._density
@@ -76,41 +121,50 @@ class WeatherAppLayout(BoxLayout):
         super().__init__(**kwargs)
         logger.debug("Initializing WeatherAppLayout")
         self.orientation = 'vertical'
-        self.padding = [20, 20]
-        self.spacing = 20
+        self.padding = [40, 40]  # Increased padding for larger window
+        self.spacing = 30  # Increased spacing for better visual hierarchy
         
         self.api_key = api_key
         self.base_url = base_url
+        self.location_storage = LocationStorage()
 
         # Create UI components
         self._create_ui_components()
+        self._update_saved_locations()
         logger.debug("UI components initialized")
 
     def _create_ui_components(self):
         """Create and initialize all UI components"""
         # Title
-        self.add_widget(Label(
-            text="Weather Forecast",
-            font_size='24sp',
+        title_layout = BoxLayout(
+            orientation='vertical',
             size_hint_y=None,
-            height=50,
+            height=80,
+            padding=[0, 10]
+        )
+        title_layout.add_widget(Label(
+            text="Weather Forecast",
+            font_size='32sp',  # Increased font size
+            size_hint_y=None,
+            height=60,
             color=get_color_from_hex('#2196F3')
         ))
+        self.add_widget(title_layout)
 
         # Input section
         input_layout = BoxLayout(
             orientation='horizontal',
             size_hint_y=None,
-            height=40,
-            spacing=10
+            height=50,  # Increased height
+            spacing=20  # Increased spacing
         )
         
         self.zip_code = TextInput(
             multiline=False,
             hint_text='Enter ZIP code',
-            padding=[10, 10, 0, 0],
+            padding=[20, 15, 0, 15],  # Increased padding
             size_hint_x=0.7,
-            font_size='16sp',
+            font_size='18sp',  # Increased font size
             background_color=get_color_from_hex('#ffffff'),
             foreground_color=get_color_from_hex('#000000')
         )
@@ -119,6 +173,7 @@ class WeatherAppLayout(BoxLayout):
         self.get_weather_button = Button(
             text='Get Weather',
             size_hint_x=0.3,
+            font_size='18sp',  # Increased font size
             background_color=get_color_from_hex('#2196F3'),
             background_normal=''
         )
@@ -128,19 +183,40 @@ class WeatherAppLayout(BoxLayout):
         input_layout.add_widget(self.get_weather_button)
         self.add_widget(input_layout)
 
+        # Save location button
+        self.save_button = Button(
+            text='Save Location',
+            size_hint_y=None,
+            height=50,  # Increased height
+            font_size='18sp',  # Increased font size
+            background_color=get_color_from_hex('#4CAF50'),
+            background_normal='',
+            disabled=True
+        )
+        self.save_button.bind(on_press=self.save_current_location)
+        self.add_widget(self.save_button)
+
+        # Weather display section
+        weather_section = BoxLayout(
+            orientation='vertical',
+            size_hint_y=None,
+            height=400,  # Fixed height for weather section
+            spacing=20
+        )
+
         # Weather image
         self.weather_image = AsyncImage(
             size_hint=(None, None),
-            size=(150, 150),
+            size=(200, 200),  # Larger image
             pos_hint={'center_x': 0.5}
         )
-        self.add_widget(self.weather_image)
+        weather_section.add_widget(self.weather_image)
 
         # Weather information display
         self.weather_display = Label(
             text='',
             markup=True,
-            font_size='18sp',
+            font_size='24sp',  # Increased font size
             halign='center',
             valign='middle',
             color=get_color_from_hex('#333333'),
@@ -148,7 +224,106 @@ class WeatherAppLayout(BoxLayout):
             height=200
         )
         self.weather_display.bind(size=self.weather_display.setter('text_size'))
-        self.add_widget(self.weather_display)
+        weather_section.add_widget(self.weather_display)
+        
+        self.add_widget(weather_section)
+
+        # Saved locations section with flexible height
+        locations_section = BoxLayout(
+            orientation='vertical',
+            size_hint_y=1,  # Take remaining space
+            spacing=10
+        )
+
+        saved_locations_label = Label(
+            text="Saved Locations",
+            font_size='24sp',  # Increased font size
+            size_hint_y=None,
+            height=40,
+            color=get_color_from_hex('#2196F3')
+        )
+        locations_section.add_widget(saved_locations_label)
+
+        # Create a ScrollView that takes remaining space
+        scroll_view = ScrollView(
+            size_hint_y=1,  # Take remaining space
+            do_scroll_x=False,
+            do_scroll_y=True
+        )
+        
+        # Container for saved location buttons
+        self.saved_locations_container = BoxLayout(
+            orientation='vertical',
+            size_hint_y=None,
+            spacing=10  # Increased spacing
+        )
+        self.saved_locations_container.bind(
+            minimum_height=self.saved_locations_container.setter('height')
+        )
+        
+        scroll_view.add_widget(self.saved_locations_container)
+        locations_section.add_widget(scroll_view)
+        self.add_widget(locations_section)
+
+    def _update_saved_locations(self):
+        """Update the saved locations display"""
+        self.saved_locations_container.clear_widgets()
+        
+        for zip_code, location_name in self.location_storage.get_locations().items():
+            # Create a layout for the location entry
+            entry_layout = BoxLayout(
+                orientation='horizontal',
+                size_hint_y=None,
+                height=60,  # Increased height
+                spacing=10
+            )
+            
+            location_button = Button(
+                text=f"{location_name} ({zip_code})",
+                size_hint_x=1,
+                height=60,  # Increased height
+                font_size='18sp',  # Increased font size
+                background_color=get_color_from_hex('#E3F2FD'),
+                background_normal='',
+                color=get_color_from_hex('#333333')
+            )
+            location_button.bind(on_press=lambda btn, zip=zip_code: self.load_saved_location(zip))
+            
+            # Add the location button
+            entry_layout.add_widget(location_button)
+            
+            delete_button = Button(
+                text='×',
+                size_hint_x=None,
+                width=60,  # Square button
+                font_size='24sp',  # Increased font size
+                background_color=get_color_from_hex('#FF5252'),
+                background_normal=''
+            )
+            delete_button.bind(on_press=lambda btn, zip=zip_code: self.delete_location(zip))
+            entry_layout.add_widget(delete_button)
+            
+            self.saved_locations_container.add_widget(entry_layout)
+
+    def save_current_location(self, instance):
+        """Save the current location"""
+        current_zip = self.zip_code.text
+        if current_zip and len(current_zip) == 5 and current_zip.isnumeric():
+            location_name = self.weather_display.text.split('\n')[0].replace('[b]', '').replace('[/b]', '')
+            self.location_storage.add_location(current_zip, location_name)
+            self._update_saved_locations()
+            logger.debug(f"Saved location: {location_name} ({current_zip})")
+
+    def load_saved_location(self, zip_code: str):
+        """Load weather for a saved location"""
+        self.zip_code.text = zip_code
+        self.get_weather(None)
+
+    def delete_location(self, zip_code: str):
+        """Delete a saved location"""
+        self.location_storage.remove_location(zip_code)
+        self._update_saved_locations()
+        logger.debug(f"Deleted location: {zip_code}")
 
     def _validate_api_key(self):
         """Validate the API key"""
@@ -170,6 +345,9 @@ class WeatherAppLayout(BoxLayout):
     def get_weather(self, instance):
         """Get weather data for the specified ZIP code"""
         logger.debug("\n=== Starting weather request ===")
+        
+        # Disable save button initially
+        self.save_button.disabled = True
         
         # Validate API key
         if not self._validate_api_key():
@@ -258,6 +436,9 @@ class WeatherAppLayout(BoxLayout):
             weather_icon_url = data['current']['weather_icons'][0]
             logger.debug(f"Setting weather icon URL: {weather_icon_url}")
             self.weather_image.source = weather_icon_url
+            
+            # Enable save button on successful weather fetch
+            self.save_button.disabled = False
 
         except requests.RequestException as e:
             logger.error(f"Request failed: {str(e)}", exc_info=True)
