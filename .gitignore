@@ -197,3 +197,11 @@ ENV/
 .vscode/
 *.swp
 *.swo
+
+# Temporary files
+.tmp
+.temp
+.cache
+.log
+.name
+tall GitHub.cli
