@@ -524,11 +524,10 @@ class WeatherAppLayout(BoxLayout):
             anim = Animation(opacity=1, duration=0.3)
             anim.start(card)
             
-            # Save location if not already saved
-            locations = self.location_storage.get_locations()
-            if zip_code not in locations:
-                logger.debug(f"Saving new location: {zip_code}")
-                self.location_storage.add_location(zip_code)
+            # Save new location if not already stored
+            if zip_code not in self.location_storage.get_saved_locations():
+                logger.debug(f"[Saving new location] {zip_code}")
+                self.location_storage.add_location(zip_code, weather_data.location)
                 
             # Bind the location list size to its children
             self.location_list.bind(minimum_height=self.location_list.setter('height'))
