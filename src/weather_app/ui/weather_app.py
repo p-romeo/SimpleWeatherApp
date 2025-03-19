@@ -19,8 +19,8 @@ from kivy.utils import get_color_from_hex
 from kivy.clock import Clock
 from kivy.uix.spinner import Spinner
 
-from ..api.weather_client import WeatherStackClient
-from ..storage.location_storage import LocationStorage
+from src.weather_app.api.weather_client import WeatherStackClient
+from src.weather_app.storage.location_storage import LocationStorage
 
 logger = logging.getLogger(__name__)
 

@@ -2,28 +2,28 @@
 Location storage module for the Weather App
 """
 
-from typing import List, Optional
+from typing import Dict, Optional
 
 class LocationStorage:
     """Class to handle storage and retrieval of weather locations"""
     
     def __init__(self):
-        self.locations: List[str] = []
+        self.locations: Dict[str, str] = {}
     
-    def add_location(self, location: str) -> None:
+    def add_location(self, zip_code: str, location_name: str) -> None:
         """Add a new location to the storage"""
-        if location and location not in self.locations:
-            self.locations.append(location)
+        if zip_code and location_name:
+            self.locations[zip_code] = location_name
     
-    def remove_location(self, location: str) -> bool:
+    def remove_location(self, zip_code: str) -> bool:
         """Remove a location from storage"""
-        if location in self.locations:
-            self.locations.remove(location)
+        if zip_code in self.locations:
+            del self.locations[zip_code]
             return True
         return False
     
-    def get_locations(self) -> List[str]:
-        """Get all stored locations"""
+    def get_locations(self) -> Dict[str, str]:
+        """Get all stored locations as a dictionary of zip_code: location_name pairs"""
         return self.locations.copy()
     
     def clear(self) -> None:
