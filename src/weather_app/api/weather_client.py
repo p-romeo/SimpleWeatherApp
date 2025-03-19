@@ -30,6 +30,7 @@ class WeatherData:
     wind_speed: float
     icon_url: str
     timestamp: datetime
+    zip_code: str
 
 class WeatherStackClient:
     """
@@ -109,7 +110,7 @@ class WeatherStackClient:
         cached_data = self._get_cached_weather(zip_code)
         if cached_data:
             logger.debug(f"Returning cached weather data for {zip_code}")
-            return self._parse_weather_data(cached_data)
+            return self._parse_weather_data(zip_code, cached_data)
             
         # Prepare API request
         params = {
@@ -152,7 +153,7 @@ class WeatherStackClient:
             # Update last request time for rate limiting
             self._last_request_time = time.time()
                 
-            return self._parse_weather_data(data)
+            return self._parse_weather_data(zip_code, data)
             
         except requests.Timeout:
             logger.error("API request timed out")
@@ -226,11 +227,12 @@ class WeatherStackClient:
         self._weather_cache[zip_code] = data
         self._cache_timestamps[zip_code] = time.time()
         
-    def _parse_weather_data(self, data: Dict[str, Any]) -> WeatherData:
+    def _parse_weather_data(self, zip_code: str, data: Dict[str, Any]) -> WeatherData:
         """
         Parse raw API response into structured WeatherData
         
         Args:
+            zip_code: The ZIP code for this weather data
             data: Raw API response data
             
         Returns:
@@ -250,7 +252,8 @@ class WeatherStackClient:
                 humidity=int(current['humidity']),
                 wind_speed=float(current['wind_speed']),
                 icon_url=current['weather_icons'][0],
-                timestamp=datetime.fromtimestamp(location['localtime_epoch'])
+                timestamp=datetime.fromtimestamp(location['localtime_epoch']),
+                zip_code=zip_code
             )
         except (KeyError, IndexError) as e:
             logger.error(f"Failed to parse weather data: {str(e)}")

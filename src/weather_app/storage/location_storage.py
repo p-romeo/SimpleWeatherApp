@@ -43,6 +43,15 @@ class LocationStorage:
         self.locations: Dict[str, Dict[str, str]] = {}
         self._load_locations()
         
+    def save(self) -> None:
+        """
+        Save locations to the storage file
+        
+        Raises:
+            IOError: If there's an error writing to the file
+        """
+        self._save_locations()
+        
     def _load_locations(self) -> None:
         """
         Load locations from the storage file
