@@ -21,6 +21,7 @@ from kivy.app import App
 from kivy.core.window import Window
 from kivy.uix.button import Button
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.image import AsyncImage
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
@@ -31,7 +32,11 @@ from kivy.uix.spinner import Spinner
 from kivy.uix.popup import Popup
 from kivy.uix.progressbar import ProgressBar
 from kivy.animation import Animation
-from kivy.graphics import Color, Rectangle
+from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.metrics import dp
+from kivy.properties import StringProperty, NumericProperty, ListProperty
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.image import Image
 
 from src.weather_app.api.weather_client import WeatherStackClient, WeatherData
 from src.weather_app.storage.location_storage import LocationStorage
@@ -67,141 +72,272 @@ class ErrorPopup(Popup):
         
         self.content = content
 
+class WeatherCard(ButtonBehavior, BoxLayout):
+    """Custom card widget for displaying weather information"""
+    
+    temperature = StringProperty('--°F')
+    location = StringProperty('')
+    description = StringProperty('')
+    humidity = StringProperty('--%')
+    wind_speed = StringProperty('-- mph')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.size_hint_y = None
+        self.height = dp(200)
+        self.padding = dp(15)
+        self.spacing = dp(10)
+        self.background_normal = ''
+        self.background_color = get_color_from_hex('#FFFFFF')
+        
+        with self.canvas.before:
+            Color(0.95, 0.95, 0.95, 1)  # Light gray background
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
+        
+        # Bind size to update the background rectangle
+        self.bind(pos=self._update_rect, size=self._update_rect)
+        
+        # Create content
+        self._create_content()
+        
+        # Bind property changes to update content
+        self.bind(
+            temperature=self._update_temperature,
+            location=self._update_location,
+            description=self._update_description,
+            humidity=self._update_humidity,
+            wind_speed=self._update_wind_speed
+        )
+        
+    def _update_rect(self, instance, value):
+        """Update the background rectangle when the widget size changes"""
+        self.canvas.before.clear()
+        with self.canvas.before:
+            Color(0.95, 0.95, 0.95, 1)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
+            
+    def _create_content(self):
+        """Create the card content"""
+        # Location and temperature
+        header = BoxLayout(size_hint_y=None, height=dp(40))
+        self.location_label = Label(
+            text=self.location,
+            font_size='18sp',
+            bold=True,
+            color=get_color_from_hex('#333333')
+        )
+        self.temp_label = Label(
+            text=self.temperature,
+            font_size='24sp',
+            bold=True,
+            color=get_color_from_hex('#2196F3')
+        )
+        header.add_widget(self.location_label)
+        header.add_widget(self.temp_label)
+        self.add_widget(header)
+        
+        # Weather condition
+        self.condition_label = Label(
+            text=self.description,
+            font_size='16sp',
+            color=get_color_from_hex('#666666')
+        )
+        self.add_widget(self.condition_label)
+        
+        # Details grid
+        details = GridLayout(
+            cols=2,
+            spacing=dp(10),
+            size_hint_y=None,
+            height=dp(80)
+        )
+        
+        # Humidity
+        humidity_box = BoxLayout(orientation='vertical')
+        humidity_box.add_widget(Label(
+            text='Humidity',
+            font_size='12sp',
+            color=get_color_from_hex('#999999')
+        ))
+        self.humidity_label = Label(
+            text=self.humidity,
+            font_size='14sp',
+            color=get_color_from_hex('#333333')
+        )
+        humidity_box.add_widget(self.humidity_label)
+        details.add_widget(humidity_box)
+        
+        # Wind Speed
+        wind_box = BoxLayout(orientation='vertical')
+        wind_box.add_widget(Label(
+            text='Wind Speed',
+            font_size='12sp',
+            color=get_color_from_hex('#999999')
+        ))
+        self.wind_speed_label = Label(
+            text=self.wind_speed,
+            font_size='14sp',
+            color=get_color_from_hex('#333333')
+        )
+        wind_box.add_widget(self.wind_speed_label)
+        details.add_widget(wind_box)
+        
+        self.add_widget(details)
+        
+    def _update_temperature(self, instance, value):
+        """Update temperature label"""
+        self.temp_label.text = value
+        
+    def _update_location(self, instance, value):
+        """Update location label"""
+        self.location_label.text = value
+        
+    def _update_description(self, instance, value):
+        """Update description label"""
+        self.condition_label.text = value
+        
+    def _update_humidity(self, instance, value):
+        """Update humidity label"""
+        self.humidity_label.text = value
+        
+    def _update_wind_speed(self, instance, value):
+        """Update wind speed label"""
+        self.wind_speed_label.text = value
+
 class WeatherAppLayout(BoxLayout):
-    """Main layout for the Weather App"""
+    """Main application layout"""
     
     def __init__(self, api_client: WeatherStackClient, location_storage: LocationStorage, **kwargs):
-        """
-        Initialize the Weather App layout
-        
-        Args:
-            api_client: The WeatherStack API client
-            location_storage: The location storage manager
-        """
         super().__init__(**kwargs)
-        
+        self.orientation = 'vertical'
+        self.padding = dp(20)
+        self.spacing = dp(15)
         self.api_client = api_client
         self.location_storage = location_storage
+        self.weather_cards = []
         
-        # Configure layout
-        self.orientation = 'vertical'
-        self.padding = [40, 40]
-        self.spacing = 30
+        # Set background color
+        with self.canvas.before:
+            Color(0.92, 0.92, 0.92, 1)  # Light gray background
+            Rectangle(pos=self.pos, size=self.size)
         
-        # Initialize thread-safe components
-        self._weather_queue = Queue()
-        self._current_weather_thread = None
-        self._thread_lock = Lock()
-        self._current_zip_code = None
+        # Bind size to update the background rectangle
+        self.bind(pos=self._update_rect, size=self._update_rect)
         
         # Create UI components
         self._create_ui_components()
-        self._update_saved_locations()
         
-        # Schedule periodic UI updates
-        Clock.schedule_interval(self._check_weather_queue, 0.1)
-        logger.debug("UI components initialized")
-
+        # Load saved locations
+        self._load_saved_locations()
+        
+    def _update_rect(self, instance, value):
+        """Update the background rectangle when the widget size changes"""
+        self.canvas.before.clear()
+        with self.canvas.before:
+            Color(0.92, 0.92, 0.92, 1)
+            Rectangle(pos=self.pos, size=self.size)
+            
     def _create_ui_components(self):
-        """Create and initialize all UI components"""
-        self._create_title_section()
-        self._create_input_section()
-        self._create_save_button()
+        """Create all UI components"""
+        # Create header
+        self._create_header()
+        
+        # Create search section
+        self._create_search_section()
+        
+        # Create weather section
         self._create_weather_section()
-        self._create_saved_locations_section()
-        self._create_error_popup()
-
-    def _create_title_section(self):
-        """Create the title section"""
-        title_layout = BoxLayout(
-            orientation='vertical',
+        
+        # Create location list
+        self._create_location_list()
+        
+    def _create_header(self):
+        """Create the application header"""
+        header = BoxLayout(
             size_hint_y=None,
-            height=80,
-            padding=[0, 10]
-        )
-        title_layout.add_widget(Label(
-            text="Weather Forecast",
-            font_size='32sp',
-            size_hint_y=None,
-            height=60,
-            color=get_color_from_hex('#2196F3')
-        ))
-        self.add_widget(title_layout)
-
-    def _create_input_section(self):
-        """Create the input section"""
-        input_layout = BoxLayout(
-            orientation='horizontal',
-            size_hint_y=None,
-            height=50,
-            spacing=20
+            height=dp(60),
+            spacing=dp(10)
         )
         
-        self.zip_code = TextInput(
-            multiline=False,
-            hint_text='Enter ZIP code',
-            padding=[20, 15, 0, 15],
-            size_hint_x=0.7,
-            font_size='18sp',
-            background_color=get_color_from_hex('#ffffff'),
-            foreground_color=get_color_from_hex('#000000')
+        title = Label(
+            text='Weather App',
+            font_size='24sp',
+            bold=True,
+            color=get_color_from_hex('#2196F3'),
+            size_hint_x=0.7
         )
-        self.zip_code.bind(on_text_validate=self.get_weather)
         
-        self.get_weather_button = Button(
-            text='Get Weather',
+        refresh_btn = Button(
+            text='⟳',
+            font_size='24sp',
             size_hint_x=0.3,
-            font_size='18sp',
             background_color=get_color_from_hex('#2196F3'),
-            background_normal=''
-        )
-        self.get_weather_button.bind(on_press=self.get_weather)
-        
-        input_layout.add_widget(self.zip_code)
-        input_layout.add_widget(self.get_weather_button)
-        self.add_widget(input_layout)
-
-    def _create_save_button(self):
-        """Create the save location button"""
-        self.save_button = Button(
-            text='Save Location',
-            size_hint_y=None,
-            height=50,
-            font_size='18sp',
-            background_color=get_color_from_hex('#4CAF50'),
             background_normal='',
-            disabled=True
+            on_press=self._refresh_all_weather
         )
-        self.save_button.bind(on_press=self.save_current_location)
-        self.add_widget(self.save_button)
-
+        
+        header.add_widget(title)
+        header.add_widget(refresh_btn)
+        self.add_widget(header)
+        
+    def _create_search_section(self):
+        """Create the search section"""
+        search_section = BoxLayout(
+            size_hint_y=None,
+            height=dp(50),
+            spacing=dp(10)
+        )
+        
+        self.zip_input = TextInput(
+            hint_text='Enter ZIP code',
+            multiline=False,
+            size_hint_x=0.7,
+            background_color=get_color_from_hex('#FFFFFF'),
+            foreground_color=get_color_from_hex('#333333'),
+            cursor_color=get_color_from_hex('#2196F3'),
+            padding=[dp(10), dp(10)]
+        )
+        
+        search_btn = Button(
+            text='Search',
+            size_hint_x=0.3,
+            background_color=get_color_from_hex('#2196F3'),
+            background_normal='',
+            on_press=self._search_weather
+        )
+        
+        search_section.add_widget(self.zip_input)
+        search_section.add_widget(search_btn)
+        self.add_widget(search_section)
+        
     def _create_weather_section(self):
         """Create the weather display section"""
-        weather_section = BoxLayout(
+        self.weather_section = BoxLayout(
             orientation='vertical',
             size_hint_y=None,
-            height=400,
-            spacing=20
+            height=dp(400),
+            spacing=dp(20)
         )
-
+        
         # Create loading spinner
         self.loading_spinner = Spinner(
             text='Loading weather data...',
             values=('Loading weather data...',),
             size_hint=(None, None),
-            size=(200, 50),
+            size=(dp(200), dp(50)),
             pos_hint={'center_x': 0.5},
             background_color=get_color_from_hex('#2196F3'),
             background_normal='',
         )
         self.loading_spinner.opacity = 0
-        weather_section.add_widget(self.loading_spinner)
-
+        self.weather_section.add_widget(self.loading_spinner)
+        
         # Create progress bar container
         progress_container = BoxLayout(
             orientation='vertical',
             size_hint=(None, None),
-            size=(200, 4),
+            size=(dp(200), dp(4)),
             pos_hint={'center_x': 0.5}
         )
         
@@ -223,324 +359,194 @@ class WeatherAppLayout(BoxLayout):
         )
         progress_container.add_widget(self.progress_bar)
         progress_container.opacity = 0
-        weather_section.add_widget(progress_container)
-
-        self.weather_image = AsyncImage(
-            size_hint=(None, None),
-            size=(200, 200),
-            pos_hint={'center_x': 0.5}
-        )
-        weather_section.add_widget(self.weather_image)
-
-        self.weather_display = Label(
-            text='',
-            markup=True,
-            font_size='24sp',
-            halign='center',
-            valign='middle',
-            color=get_color_from_hex('#333333'),
-            size_hint_y=None,
-            height=200
-        )
-        self.weather_display.bind(size=self.weather_display.setter('text_size'))
-        weather_section.add_widget(self.weather_display)
+        self.weather_section.add_widget(progress_container)
         
-        self.add_widget(weather_section)
-
-    def _create_saved_locations_section(self):
-        """Create the saved locations section"""
-        locations_section = BoxLayout(
+        self.add_widget(self.weather_section)
+        
+    def _create_location_list(self):
+        """Create the location list section"""
+        # Create a container for the scroll view
+        scroll_container = BoxLayout(
             orientation='vertical',
-            size_hint_y=1,
-            spacing=10
-        )
-
-        saved_locations_label = Label(
-            text="Saved Locations",
-            font_size='24sp',
             size_hint_y=None,
-            height=40,
-            color=get_color_from_hex('#2196F3')
+            height=dp(400)  # Fixed height for the scroll area
         )
-        locations_section.add_widget(saved_locations_label)
-
-        scroll_view = ScrollView(
-            size_hint_y=1,
+        
+        # Create the grid layout for weather cards
+        self.location_list = GridLayout(
+            cols=1,
+            spacing=dp(10),
+            size_hint_y=None,
+            padding=dp(10)
+        )
+        
+        # Make the grid layout expand to fit its children
+        self.location_list.bind(
+            minimum_height=self.location_list.setter('height')
+        )
+        
+        # Create the scroll view
+        scroll = ScrollView(
+            size_hint=(1, 1),
             do_scroll_x=False,
-            do_scroll_y=True
+            do_scroll_y=True,
+            bar_width=dp(10),
+            scroll_type=['bars', 'content']
         )
         
-        self.saved_locations_container = BoxLayout(
-            orientation='vertical',
-            size_hint_y=None,
-            spacing=10
-        )
-        self.saved_locations_container.bind(
-            minimum_height=self.saved_locations_container.setter('height')
-        )
+        # Add the grid layout to the scroll view
+        scroll.add_widget(self.location_list)
         
-        scroll_view.add_widget(self.saved_locations_container)
-        locations_section.add_widget(scroll_view)
-        self.add_widget(locations_section)
-
-    def _create_error_popup(self):
-        """Create the error popup"""
-        self.error_popup = None
-
-    def _show_error(self, title: str, message: str) -> None:
-        """
-        Show an error popup
+        # Add the scroll view to the container
+        scroll_container.add_widget(scroll)
         
-        Args:
-            title: The popup title
-            message: The error message
-        """
-        if self.error_popup:
-            self.error_popup.dismiss()
-        self.error_popup = ErrorPopup(title=title, message=message)
-        self.error_popup.open()
-
-    def _update_saved_locations(self):
-        """Update the saved locations display"""
-        self.saved_locations_container.clear_widgets()
+        # Add the container to the main layout
+        self.add_widget(scroll_container)
         
-        for zip_code, location_name in self.location_storage.get_locations().items():
-            entry_layout = BoxLayout(
-                orientation='horizontal',
-                size_hint_y=None,
-                height=60,
-                spacing=10
-            )
-            
-            location_button = Button(
-                text=f"{location_name} ({zip_code})",
-                size_hint_x=1,
-                height=60,
-                font_size='18sp',
-                background_color=get_color_from_hex('#E3F2FD'),
-                background_normal='',
-                color=get_color_from_hex('#333333')
-            )
-            location_button.bind(on_press=lambda btn, zip=zip_code: self.load_saved_location(zip))
-            
-            entry_layout.add_widget(location_button)
-            
-            delete_button = Button(
-                text='×',
-                size_hint_x=None,
-                width=60,
-                font_size='24sp',
-                background_color=get_color_from_hex('#FF5252'),
-                background_normal=''
-            )
-            delete_button.bind(on_press=lambda btn, zip=zip_code: self.delete_location(zip))
-            entry_layout.add_widget(delete_button)
-            
-            self.saved_locations_container.add_widget(entry_layout)
-
-    def _fetch_weather_async(self, zip_code: str) -> None:
-        """
-        Fetch weather data in a separate thread
-        
-        Args:
-            zip_code: The ZIP code to fetch weather for
-        """
+    def _create_weather_card(self, weather_data: WeatherData) -> WeatherCard:
+        """Create a weather card for the given weather data"""
         try:
-            with self._thread_lock:
-                if self._current_weather_thread and self._current_weather_thread.is_alive():
-                    logger.warning("Weather fetch already in progress")
-                    return
-                    
-                self._current_weather_thread = Thread(
-                    target=self._weather_worker,
-                    args=(zip_code,),
-                    daemon=True
-                )
-                self._current_weather_thread.start()
-                
+            logger.debug("Creating WeatherCard with data:")
+            logger.debug(f"  Location: {weather_data.location}")
+            logger.debug(f"  Temperature: {weather_data.temperature}")
+            logger.debug(f"  Description: {weather_data.description}")
+            logger.debug(f"  Humidity: {weather_data.humidity}")
+            logger.debug(f"  Wind Speed: {weather_data.wind_speed}")
+            
+            card = WeatherCard()
+            card.size_hint_y = None  # Allow the card to have a fixed height
+            card.height = dp(200)    # Set a fixed height for the card
+            card.temperature = f"{weather_data.temperature}°F"
+            card.location = weather_data.location
+            card.description = weather_data.description
+            card.humidity = f"{weather_data.humidity}%"
+            card.wind_speed = f"{weather_data.wind_speed} mph"
+            
+            # Add animation for card appearance
+            card.opacity = 0
+            anim = Animation(opacity=1, duration=0.3)
+            anim.start(card)
+            
+            return card
         except Exception as e:
-            logger.error(f"Error starting weather fetch thread: {str(e)}")
-            self._weather_queue.put(('error', str(e)))
-
-    def _weather_worker(self, zip_code: str) -> None:
-        """
-        Worker thread for fetching weather data
+            logger.error(f"Error creating weather card: {str(e)}", exc_info=True)
+            raise
         
-        Args:
-            zip_code: The ZIP code to fetch weather for
-        """
-        try:
-            # Update progress bar
-            for i in range(0, 101, 10):
-                self._weather_queue.put(('progress', i))
-                time.sleep(0.1)
-            
-            # Fetch weather data
-            data = self.api_client.get_weather(zip_code)
-            self._weather_queue.put(('success', data))
-            
-        except Exception as e:
-            logger.error(f"Error in weather worker: {str(e)}")
-            self._weather_queue.put(('error', str(e)))
-        finally:
-            # Reset progress bar
-            self._weather_queue.put(('progress', 0))
-
-    def _check_weather_queue(self, dt: float) -> None:
-        """
-        Check the weather queue for updates
-        
-        Args:
-            dt: Delta time from Clock
-        """
-        try:
-            while not self._weather_queue.empty():
-                msg_type, data = self._weather_queue.get_nowait()
-                
-                if msg_type == 'success':
-                    self._update_weather_display(data)
-                elif msg_type == 'error':
-                    self._show_error('Error', str(data))
-                elif msg_type == 'progress':
-                    self._update_progress_bar(data)
-                    
-        except Exception as e:
-            logger.error(f"Error processing weather queue: {str(e)}")
-
-    def _update_weather_display(self, weather_data: WeatherData) -> None:
-        """
-        Update the weather display with new data
-        
-        Args:
-            weather_data: The weather data to display
-        """
-        try:
-            # Update weather image
-            self.weather_image.source = weather_data.icon_url
-            
-            # Update weather text
-            self.weather_display.text = (
-                f"[b]{weather_data.location}[/b]\n"
-                f"Temperature: {weather_data.temperature}°F\n"
-                f"Conditions: {weather_data.description}\n"
-                f"Humidity: {weather_data.humidity}%\n"
-                f"Wind Speed: {weather_data.wind_speed} mph\n"
-                f"Last Updated: {weather_data.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            
-            # Enable save button
-            self.save_button.disabled = False
-            self._current_zip_code = weather_data.location
-            
-            # Hide loading indicators
-            self._hide_loading_indicators()
-            
-        except Exception as e:
-            logger.error(f"Error updating weather display: {str(e)}")
-            self._show_error('Error', 'Failed to update weather display')
-
-    def _update_progress_bar(self, value: int) -> None:
-        """
-        Update the progress bar value
-        
-        Args:
-            value: The progress value (0-100)
-        """
-        if value == 0:
-            self.progress_bar.opacity = 0
+    def _show_loading(self, show: bool = True):
+        """Show or hide loading indicators"""
+        if show:
+            self.loading_spinner.opacity = 1
+            self.progress_bar.parent.opacity = 1
+            self.progress_bar.value = 0
         else:
-            self.progress_bar.opacity = 1
-            self.progress_bar.value = value
-
-    def _show_loading_indicators(self) -> None:
-        """Show loading indicators"""
-        self.loading_spinner.opacity = 1
-        self.progress_bar.opacity = 1
-        self.progress_bar.value = 0
-
-    def _hide_loading_indicators(self) -> None:
-        """Hide loading indicators"""
-        self.loading_spinner.opacity = 0
-        self.progress_bar.opacity = 0
-
-    def get_weather(self, instance: Any) -> None:
-        """
-        Get weather for the entered ZIP code
+            self.loading_spinner.opacity = 0
+            self.progress_bar.parent.opacity = 0
+            
+    def _update_progress(self, value: float):
+        """Update the progress bar value"""
+        self.progress_bar.value = value
         
-        Args:
-            instance: The widget that triggered this method
-        """
-        zip_code = self.zip_code.text.strip()
+    def _show_error(self, title: str, message: str):
+        """Show an error popup"""
+        popup = ErrorPopup(title=title, message=message)
+        popup.open()
         
+    def _refresh_all_weather(self, instance=None):
+        """Refresh weather data for all locations"""
+        self._show_loading()
+        locations = self.location_storage.get_locations()
+        total = len(locations)
+        
+        for i, location in enumerate(locations):
+            self._update_progress((i + 1) / total * 100)
+            self._fetch_weather(location)
+            
+        self._show_loading(False)
+        
+    def _search_weather(self, instance=None):
+        """Search for weather by ZIP code"""
+        zip_code = self.zip_input.text.strip()
         if not zip_code:
             self._show_error('Error', 'Please enter a ZIP code')
             return
             
-        self._show_loading_indicators()
-        self._fetch_weather_async(zip_code)
-
-    def save_current_location(self, instance: Any) -> None:
-        """
-        Save the current location
+        self._show_loading()
+        self._fetch_weather(zip_code)
         
-        Args:
-            instance: The widget that triggered this method
-        """
-        if not self._current_zip_code:
-            self._show_error('Error', 'No location to save')
-            return
+    def _fetch_weather(self, zip_code: str):
+        """Fetch weather data for a location"""
+        try:
+            logger.debug(f"Fetching weather data for ZIP code: {zip_code}")
+            weather_data = self.api_client.get_weather(zip_code)
+            logger.debug(f"Received weather data: {weather_data.__dict__}")
+            self._update_weather_display(weather_data, zip_code)
+        except Exception as e:
+            logger.error(f"Error fetching weather data: {str(e)}", exc_info=True)
+            self._show_error('Error', str(e))
+        finally:
+            self._show_loading(False)
             
+    def _update_weather_display(self, weather_data: WeatherData, zip_code: str):
+        """Update the weather display with new data"""
         try:
-            self.location_storage.add_location(
-                self.zip_code.text.strip(),
-                self._current_zip_code
-            )
-            self._update_saved_locations()
-            self._show_error('Success', 'Location saved successfully')
+            logger.debug("Creating weather card")
+            # Create and add new weather card
+            card = WeatherCard()
+            card.size_hint_y = None  # Allow the card to have a fixed height
+            card.height = dp(200)    # Set a fixed height for the card
+            
+            # Update card properties
+            logger.debug("Setting card properties:")
+            logger.debug(f"  Temperature: {weather_data.temperature}°F")
+            logger.debug(f"  Location: {weather_data.location}")
+            logger.debug(f"  Description: {weather_data.description}")
+            logger.debug(f"  Humidity: {weather_data.humidity}%")
+            logger.debug(f"  Wind Speed: {weather_data.wind_speed} mph")
+            
+            card.temperature = f"{weather_data.temperature}°F"
+            card.location = str(weather_data.location)
+            card.description = str(weather_data.description)
+            card.humidity = f"{weather_data.humidity}%"
+            card.wind_speed = f"{weather_data.wind_speed} mph"
+            
+            # Clear existing cards if this is a search (not a saved location)
+            if zip_code not in self.location_storage.get_locations():
+                logger.debug("Clearing existing cards for new search")
+                self.location_list.clear_widgets()
+                self.weather_cards = []
+            
+            logger.debug("Adding card to location list")
+            self.location_list.add_widget(card)
+            self.weather_cards.append(card)
+            
+            # Add animation for card appearance
+            card.opacity = 0
+            anim = Animation(opacity=1, duration=0.3)
+            anim.start(card)
+            
+            # Save location if not already saved
+            locations = self.location_storage.get_locations()
+            if zip_code not in locations:
+                logger.debug(f"Saving new location: {zip_code}")
+                self.location_storage.add_location(zip_code)
+                
+            # Bind the location list size to its children
+            self.location_list.bind(minimum_height=self.location_list.setter('height'))
+            
         except Exception as e:
-            logger.error(f"Error saving location: {str(e)}")
-            self._show_error('Error', 'Failed to save location')
-
-    def load_saved_location(self, zip_code: str) -> None:
-        """
-        Load a saved location
-        
-        Args:
-            zip_code: The ZIP code to load
-        """
-        self.zip_code.text = zip_code
-        self.get_weather(None)
-
-    def delete_location(self, zip_code: str) -> None:
-        """
-        Delete a saved location
-        
-        Args:
-            zip_code: The ZIP code to delete
-        """
-        try:
-            self.location_storage.remove_location(zip_code)
-            self._update_saved_locations()
-            self._show_error('Success', 'Location deleted successfully')
-        except Exception as e:
-            logger.error(f"Error deleting location: {str(e)}")
-            self._show_error('Error', 'Failed to delete location')
-
+            logger.error(f"Error updating weather display: {str(e)}", exc_info=True)
+            self._show_error('Error', 'Failed to display weather data')
+            
+    def _load_saved_locations(self):
+        """Load and display saved locations"""
+        locations = self.location_storage.get_locations()
+        for location in locations:
+            self._fetch_weather(location)
+            
     def cleanup(self) -> None:
         """Clean up resources"""
         try:
-            # Cancel any ongoing weather fetch
-            with self._thread_lock:
-                if self._current_weather_thread and self._current_weather_thread.is_alive():
-                    self._current_weather_thread.join(timeout=1.0)
-            
-            # Clear weather queue
-            while not self._weather_queue.empty():
-                try:
-                    self._weather_queue.get_nowait()
-                except:
-                    pass
-                    
+            self.api_client.cleanup()
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")
 
@@ -548,31 +554,17 @@ class WeatherApp(App):
     """Main application class"""
     
     def __init__(self, api_client: WeatherStackClient, location_storage: LocationStorage):
-        """
-        Initialize the Weather App
-        
-        Args:
-            api_client: The WeatherStack API client
-            location_storage: The location storage manager
-        """
         super().__init__()
         self.api_client = api_client
         self.location_storage = location_storage
         
     def build(self) -> WeatherAppLayout:
-        """
-        Build the application UI
-        
-        Returns:
-            WeatherAppLayout: The main application layout
-        """
         return WeatherAppLayout(
             api_client=self.api_client,
             location_storage=self.location_storage
         )
         
     def cleanup(self) -> None:
-        """Handle application shutdown"""
         try:
             if hasattr(self.root, 'cleanup'):
                 self.root.cleanup()
@@ -580,5 +572,4 @@ class WeatherApp(App):
             logger.error(f"Error during application shutdown: {str(e)}")
             
     def on_stop(self) -> None:
-        """Handle application shutdown"""
         self.cleanup() 
