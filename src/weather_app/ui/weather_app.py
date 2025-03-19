@@ -1,11 +1,21 @@
 """
 Weather App UI implementation using Kivy
+
+This module provides the user interface for the Weather App using Kivy.
+Features include:
+- Real-time weather updates
+- Location management
+- Error handling and user feedback
+- Responsive design
+- Asynchronous data fetching
 """
 
 import logging
-from typing import Optional, Dict, Any
-from threading import Thread
+from typing import Optional, Dict, Any, Tuple
+from threading import Thread, Lock
 from queue import Queue
+from datetime import datetime
+import time
 
 from kivy.app import App
 from kivy.core.window import Window
@@ -18,30 +28,71 @@ from kivy.uix.scrollview import ScrollView
 from kivy.utils import get_color_from_hex
 from kivy.clock import Clock
 from kivy.uix.spinner import Spinner
+from kivy.uix.popup import Popup
+from kivy.uix.progressbar import ProgressBar
+from kivy.animation import Animation
+from kivy.graphics import Color, Rectangle
 
-from src.weather_app.api.weather_client import WeatherStackClient
+from src.weather_app.api.weather_client import WeatherStackClient, WeatherData
 from src.weather_app.storage.location_storage import LocationStorage
 
 logger = logging.getLogger(__name__)
 
+class ErrorPopup(Popup):
+    """Custom popup for displaying errors"""
+    
+    def __init__(self, title: str, message: str, **kwargs):
+        super().__init__(**kwargs)
+        self.title = title
+        self.size_hint = (0.8, 0.3)
+        self.auto_dismiss = True
+        
+        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        content.add_widget(Label(
+            text=message,
+            text_size=(self.width - 20, None),
+            halign='center',
+            valign='middle'
+        ))
+        
+        ok_button = Button(
+            text='OK',
+            size_hint_y=None,
+            height=40,
+            background_color=get_color_from_hex('#2196F3'),
+            background_normal=''
+        )
+        ok_button.bind(on_press=self.dismiss)
+        content.add_widget(ok_button)
+        
+        self.content = content
+
 class WeatherAppLayout(BoxLayout):
     """Main layout for the Weather App"""
     
-    def __init__(self, api_client: WeatherStackClient, **kwargs):
-        """Initialize the Weather App layout"""
+    def __init__(self, api_client: WeatherStackClient, location_storage: LocationStorage, **kwargs):
+        """
+        Initialize the Weather App layout
+        
+        Args:
+            api_client: The WeatherStack API client
+            location_storage: The location storage manager
+        """
         super().__init__(**kwargs)
         
         self.api_client = api_client
-        self.location_storage = LocationStorage()
+        self.location_storage = location_storage
         
         # Configure layout
         self.orientation = 'vertical'
         self.padding = [40, 40]
         self.spacing = 30
         
-        # Initialize thread-safe queue for weather data
+        # Initialize thread-safe components
         self._weather_queue = Queue()
         self._current_weather_thread = None
+        self._thread_lock = Lock()
+        self._current_zip_code = None
         
         # Create UI components
         self._create_ui_components()
@@ -58,6 +109,7 @@ class WeatherAppLayout(BoxLayout):
         self._create_save_button()
         self._create_weather_section()
         self._create_saved_locations_section()
+        self._create_error_popup()
 
     def _create_title_section(self):
         """Create the title section"""
@@ -145,6 +197,34 @@ class WeatherAppLayout(BoxLayout):
         self.loading_spinner.opacity = 0
         weather_section.add_widget(self.loading_spinner)
 
+        # Create progress bar container
+        progress_container = BoxLayout(
+            orientation='vertical',
+            size_hint=(None, None),
+            size=(200, 4),
+            pos_hint={'center_x': 0.5}
+        )
+        
+        # Add background color using canvas
+        with progress_container.canvas.before:
+            Color(*get_color_from_hex('#E0E0E0'))
+            self.progress_bg = Rectangle(pos=progress_container.pos, size=progress_container.size)
+        
+        # Update rectangle position and size when the container changes
+        def update_rect(instance, value):
+            self.progress_bg.pos = instance.pos
+            self.progress_bg.size = instance.size
+        progress_container.bind(pos=update_rect, size=update_rect)
+        
+        self.progress_bar = ProgressBar(
+            max=100,
+            value=0,
+            size_hint=(1, 1)
+        )
+        progress_container.add_widget(self.progress_bar)
+        progress_container.opacity = 0
+        weather_section.add_widget(progress_container)
+
         self.weather_image = AsyncImage(
             size_hint=(None, None),
             size=(200, 200),
@@ -203,6 +283,23 @@ class WeatherAppLayout(BoxLayout):
         locations_section.add_widget(scroll_view)
         self.add_widget(locations_section)
 
+    def _create_error_popup(self):
+        """Create the error popup"""
+        self.error_popup = None
+
+    def _show_error(self, title: str, message: str) -> None:
+        """
+        Show an error popup
+        
+        Args:
+            title: The popup title
+            message: The error message
+        """
+        if self.error_popup:
+            self.error_popup.dismiss()
+        self.error_popup = ErrorPopup(title=title, message=message)
+        self.error_popup.open()
+
     def _update_saved_locations(self):
         """Update the saved locations display"""
         self.saved_locations_container.clear_widgets()
@@ -242,125 +339,246 @@ class WeatherAppLayout(BoxLayout):
             self.saved_locations_container.add_widget(entry_layout)
 
     def _fetch_weather_async(self, zip_code: str) -> None:
-        """Fetch weather data in a separate thread"""
+        """
+        Fetch weather data in a separate thread
+        
+        Args:
+            zip_code: The ZIP code to fetch weather for
+        """
         try:
-            data = self.api_client.get_weather(zip_code)
-            self._weather_queue.put(('success', data))
+            with self._thread_lock:
+                if self._current_weather_thread and self._current_weather_thread.is_alive():
+                    logger.warning("Weather fetch already in progress")
+                    return
+                    
+                self._current_weather_thread = Thread(
+                    target=self._weather_worker,
+                    args=(zip_code,),
+                    daemon=True
+                )
+                self._current_weather_thread.start()
+                
         except Exception as e:
+            logger.error(f"Error starting weather fetch thread: {str(e)}")
             self._weather_queue.put(('error', str(e)))
 
-    def get_weather(self, instance):
-        """Get weather data for the specified ZIP code"""
-        logger.debug("\n=== Starting weather request ===")
+    def _weather_worker(self, zip_code: str) -> None:
+        """
+        Worker thread for fetching weather data
         
-        # Disable UI elements and show loading indicator
-        self.save_button.disabled = True
-        self.get_weather_button.disabled = True
-        self.loading_spinner.opacity = 1
-        
-        # Clear previous weather display
-        self.weather_display.text = ''
-        self.weather_image.source = ''
-        
-        # Cancel any existing weather request thread
-        if self._current_weather_thread and self._current_weather_thread.is_alive():
-            logger.debug("Canceling previous weather request")
-            # We can't actually cancel the thread, but we can ignore its results
-            self._weather_queue.queue.clear()
-        
-        # Start new weather request in a separate thread
-        self._current_weather_thread = Thread(
-            target=self._fetch_weather_async,
-            args=(self.zip_code.text,),
-            daemon=True
-        )
-        self._current_weather_thread.start()
+        Args:
+            zip_code: The ZIP code to fetch weather for
+        """
+        try:
+            # Update progress bar
+            for i in range(0, 101, 10):
+                self._weather_queue.put(('progress', i))
+                time.sleep(0.1)
+            
+            # Fetch weather data
+            data = self.api_client.get_weather(zip_code)
+            self._weather_queue.put(('success', data))
+            
+        except Exception as e:
+            logger.error(f"Error in weather worker: {str(e)}")
+            self._weather_queue.put(('error', str(e)))
+        finally:
+            # Reset progress bar
+            self._weather_queue.put(('progress', 0))
 
-    def _check_weather_queue(self, dt):
-        """Check for completed weather requests"""
+    def _check_weather_queue(self, dt: float) -> None:
+        """
+        Check the weather queue for updates
+        
+        Args:
+            dt: Delta time from Clock
+        """
         try:
             while not self._weather_queue.empty():
-                status, data = self._weather_queue.get_nowait()
+                msg_type, data = self._weather_queue.get_nowait()
                 
-                # Hide loading indicator
-                self.loading_spinner.opacity = 0
-                self.get_weather_button.disabled = False
-                
-                if status == 'success':
+                if msg_type == 'success':
                     self._update_weather_display(data)
-                else:  # error
-                    self.weather_display.text = f"[color=ff3333]{data}[/color]"
-                    self.weather_image.source = ''
-                    self.save_button.disabled = True
-                
+                elif msg_type == 'error':
+                    self._show_error('Error', str(data))
+                elif msg_type == 'progress':
+                    self._update_progress_bar(data)
+                    
         except Exception as e:
-            logger.error(f"Error processing weather data: {e}", exc_info=True)
+            logger.error(f"Error processing weather queue: {str(e)}")
 
-    def _update_weather_display(self, data: Dict[str, Any]):
-        """Update the weather display with new data"""
+    def _update_weather_display(self, weather_data: WeatherData) -> None:
+        """
+        Update the weather display with new data
+        
+        Args:
+            weather_data: The weather data to display
+        """
         try:
-            temperature = data['current']['temperature']
-            location = f"{data['location']['name']}, {data['location']['region']}"
-            local_time = data['location']['localtime']
-            description = data['current']['weather_descriptions'][0]
-
-            self.weather_display.text = (
-                f"[b]{location}[/b]\n\n"
-                f"[color=#666666]{local_time}[/color]\n\n"
-                f"[size=24sp][color=#2196F3]{temperature}°F[/color][/size]\n\n"
-                f"[i]{description}[/i]"
-            )
-
-            weather_icon_url = data['current']['weather_icons'][0]
-            logger.debug(f"Setting weather icon URL: {weather_icon_url}")
-            self.weather_image.source = weather_icon_url
+            # Update weather image
+            self.weather_image.source = weather_data.icon_url
             
-            # Enable save button on successful weather fetch
+            # Update weather text
+            self.weather_display.text = (
+                f"[b]{weather_data.location}[/b]\n"
+                f"Temperature: {weather_data.temperature}°F\n"
+                f"Conditions: {weather_data.description}\n"
+                f"Humidity: {weather_data.humidity}%\n"
+                f"Wind Speed: {weather_data.wind_speed} mph\n"
+                f"Last Updated: {weather_data.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            
+            # Enable save button
             self.save_button.disabled = False
+            self._current_zip_code = weather_data.location
+            
+            # Hide loading indicators
+            self._hide_loading_indicators()
             
         except Exception as e:
-            logger.error(f"Error updating weather display: {e}", exc_info=True)
-            self.weather_display.text = "[color=ff3333]Error displaying weather data[/color]"
-            self.weather_image.source = ''
-            self.save_button.disabled = True
+            logger.error(f"Error updating weather display: {str(e)}")
+            self._show_error('Error', 'Failed to update weather display')
 
-    def save_current_location(self, instance):
-        """Save the current location"""
-        current_zip = self.zip_code.text
-        if current_zip and len(current_zip) == 5 and current_zip.isnumeric():
-            location_name = self.weather_display.text.split('\n')[0].replace('[b]', '').replace('[/b]', '')
-            self.location_storage.add_location(current_zip, location_name)
+    def _update_progress_bar(self, value: int) -> None:
+        """
+        Update the progress bar value
+        
+        Args:
+            value: The progress value (0-100)
+        """
+        if value == 0:
+            self.progress_bar.opacity = 0
+        else:
+            self.progress_bar.opacity = 1
+            self.progress_bar.value = value
+
+    def _show_loading_indicators(self) -> None:
+        """Show loading indicators"""
+        self.loading_spinner.opacity = 1
+        self.progress_bar.opacity = 1
+        self.progress_bar.value = 0
+
+    def _hide_loading_indicators(self) -> None:
+        """Hide loading indicators"""
+        self.loading_spinner.opacity = 0
+        self.progress_bar.opacity = 0
+
+    def get_weather(self, instance: Any) -> None:
+        """
+        Get weather for the entered ZIP code
+        
+        Args:
+            instance: The widget that triggered this method
+        """
+        zip_code = self.zip_code.text.strip()
+        
+        if not zip_code:
+            self._show_error('Error', 'Please enter a ZIP code')
+            return
+            
+        self._show_loading_indicators()
+        self._fetch_weather_async(zip_code)
+
+    def save_current_location(self, instance: Any) -> None:
+        """
+        Save the current location
+        
+        Args:
+            instance: The widget that triggered this method
+        """
+        if not self._current_zip_code:
+            self._show_error('Error', 'No location to save')
+            return
+            
+        try:
+            self.location_storage.add_location(
+                self.zip_code.text.strip(),
+                self._current_zip_code
+            )
             self._update_saved_locations()
-            logger.debug(f"Saved location: {location_name} ({current_zip})")
+            self._show_error('Success', 'Location saved successfully')
+        except Exception as e:
+            logger.error(f"Error saving location: {str(e)}")
+            self._show_error('Error', 'Failed to save location')
 
-    def load_saved_location(self, zip_code: str):
-        """Load weather for a saved location"""
+    def load_saved_location(self, zip_code: str) -> None:
+        """
+        Load a saved location
+        
+        Args:
+            zip_code: The ZIP code to load
+        """
         self.zip_code.text = zip_code
         self.get_weather(None)
 
-    def delete_location(self, zip_code: str):
-        """Delete a saved location"""
-        self.location_storage.remove_location(zip_code)
-        self._update_saved_locations()
-        logger.debug(f"Deleted location: {zip_code}")
+    def delete_location(self, zip_code: str) -> None:
+        """
+        Delete a saved location
+        
+        Args:
+            zip_code: The ZIP code to delete
+        """
+        try:
+            self.location_storage.remove_location(zip_code)
+            self._update_saved_locations()
+            self._show_error('Success', 'Location deleted successfully')
+        except Exception as e:
+            logger.error(f"Error deleting location: {str(e)}")
+            self._show_error('Error', 'Failed to delete location')
 
+    def cleanup(self) -> None:
+        """Clean up resources"""
+        try:
+            # Cancel any ongoing weather fetch
+            with self._thread_lock:
+                if self._current_weather_thread and self._current_weather_thread.is_alive():
+                    self._current_weather_thread.join(timeout=1.0)
+            
+            # Clear weather queue
+            while not self._weather_queue.empty():
+                try:
+                    self._weather_queue.get_nowait()
+                except:
+                    pass
+                    
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")
 
 class WeatherApp(App):
-    """Main Weather Application"""
+    """Main application class"""
     
-    def __init__(self, api_client: WeatherStackClient, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, api_client: WeatherStackClient, location_storage: LocationStorage):
+        """
+        Initialize the Weather App
+        
+        Args:
+            api_client: The WeatherStack API client
+            location_storage: The location storage manager
+        """
+        super().__init__()
         self.api_client = api_client
-
-    def build(self):
-        """Build and return the root widget"""
-        # Configure window
-        Window.size = (800, 900)
-        Window.minimum_width = 400
-        Window.minimum_height = 600
-        Window.clearcolor = get_color_from_hex('#f0f0f0')
+        self.location_storage = location_storage
         
-        # Ensure proper window density
-        Window._density = 1.0 if not Window._density else Window._density
+    def build(self) -> WeatherAppLayout:
+        """
+        Build the application UI
         
-        return WeatherAppLayout(api_client=self.api_client) 
+        Returns:
+            WeatherAppLayout: The main application layout
+        """
+        return WeatherAppLayout(
+            api_client=self.api_client,
+            location_storage=self.location_storage
+        )
+        
+    def cleanup(self) -> None:
+        """Handle application shutdown"""
+        try:
+            if hasattr(self.root, 'cleanup'):
+                self.root.cleanup()
+        except Exception as e:
+            logger.error(f"Error during application shutdown: {str(e)}")
+            
+    def on_stop(self) -> None:
+        """Handle application shutdown"""
+        self.cleanup() 
