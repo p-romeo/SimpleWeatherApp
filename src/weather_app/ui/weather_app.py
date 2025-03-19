@@ -525,7 +525,7 @@ class WeatherAppLayout(BoxLayout):
             anim.start(card)
             
             # Save new location if not already stored
-            if zip_code not in self.location_storage.get_saved_locations():
+            if zip_code not in self.location_storage.get_locations():
                 logger.debug(f"[Saving new location] {zip_code}")
                 self.location_storage.add_location(zip_code, weather_data.location)
                 
