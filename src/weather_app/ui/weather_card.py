@@ -1,18 +1,12 @@
-"""
-Weather Card UI Component
-
-This module provides a Material Design card component for displaying weather information.
-It includes:
-1. Real-time weather data display
-2. Dynamic updates
-3. Interactive elements
-4. Responsive layout
-"""
+"""Weather card widget for displaying weather information"""
 
 from kivy.uix.boxlayout import BoxLayout
 from kivy.properties import StringProperty
 from kivymd.uix.card import MDCard
 from kivymd.uix.label import MDLabel
+from kivymd.uix.button import MDIconButton
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivy.uix.image import AsyncImage
 
 class WeatherCard(MDCard):
     """
@@ -25,6 +19,7 @@ class WeatherCard(MDCard):
     4. Wind speed
     5. Humidity level
     6. Last update time
+    7. Weather icon
     
     The card updates automatically when new weather data is received
     and provides interactive elements for refreshing data or removing
@@ -37,8 +32,10 @@ class WeatherCard(MDCard):
     description = StringProperty("")
     wind_speed = StringProperty("0")
     humidity = StringProperty("0")
+    icon_url = StringProperty("")
+    last_update = StringProperty("")
     
-    def __init__(self, **kwargs):
+    def __init__(self, on_refresh=None, on_remove=None, **kwargs):
         """
         Initialize the weather card component.
         
@@ -47,16 +44,35 @@ class WeatherCard(MDCard):
         2. Weather data properties
         3. Interactive elements
         4. Update handlers
+        
+        Args:
+            on_refresh: Callback function for refreshing weather data
+            on_remove: Callback function for removing the location
+            **kwargs: Additional keyword arguments
         """
         super().__init__(**kwargs)
         self.orientation = "vertical"
         self.padding = "8dp"
         self.spacing = "8dp"
         self.size_hint_y = None
-        self.height = "200dp"
+        self.height = "250dp"
         self.elevation = 2
         
+        self.on_refresh = on_refresh
+        self.on_remove = on_remove
+        
         # Create UI elements
+        header_layout = MDBoxLayout(
+            orientation="horizontal",
+            size_hint_y=0.2,
+            spacing="8dp"
+        )
+        
+        location_info = MDBoxLayout(
+            orientation="vertical",
+            size_hint_x=0.8
+        )
+        
         self.location_label = MDLabel(
             text=self.location_name,
             font_style="H6",
@@ -66,36 +82,99 @@ class WeatherCard(MDCard):
             text=f"ZIP: {self.zip_code}",
             theme_text_color="Secondary"
         )
+        location_info.add_widget(self.location_label)
+        location_info.add_widget(self.zip_label)
+        
+        button_layout = MDBoxLayout(
+            orientation="vertical",
+            size_hint_x=0.2,
+            spacing="4dp"
+        )
+        
+        refresh_button = MDIconButton(
+            icon="refresh",
+            theme_text_color="Custom",
+            text_color=self.theme_cls.primary_color,
+            on_release=self._on_refresh_press
+        )
+        remove_button = MDIconButton(
+            icon="close",
+            theme_text_color="Custom",
+            text_color=self.theme_cls.error_color,
+            on_release=self._on_remove_press
+        )
+        button_layout.add_widget(refresh_button)
+        button_layout.add_widget(remove_button)
+        
+        header_layout.add_widget(location_info)
+        header_layout.add_widget(button_layout)
+        self.add_widget(header_layout)
+        
+        # Weather info layout
+        weather_layout = MDBoxLayout(
+            orientation="horizontal",
+            size_hint_y=0.5,
+            padding=("8dp", "8dp")
+        )
+        
+        # Left side - Temperature and description
+        temp_layout = MDBoxLayout(
+            orientation="vertical",
+            size_hint_x=0.6
+        )
         self.temp_label = MDLabel(
-            text=f"{self.temperature}°C",
-            font_style="H5",
-            theme_text_color="Primary"
+            text=f"{self.temperature}°F",
+            font_style="H4",
+            theme_text_color="Primary",
+            halign="center"
         )
         self.desc_label = MDLabel(
             text=self.description,
-            theme_text_color="Secondary"
+            theme_text_color="Secondary",
+            halign="center"
         )
+        temp_layout.add_widget(self.temp_label)
+        temp_layout.add_widget(self.desc_label)
+        
+        # Right side - Weather icon
+        self.icon_image = AsyncImage(
+            source=self.icon_url,
+            size_hint_x=0.4,
+            allow_stretch=True,
+            keep_ratio=True
+        )
+        
+        weather_layout.add_widget(temp_layout)
+        weather_layout.add_widget(self.icon_image)
+        self.add_widget(weather_layout)
+        
+        # Details layout
+        details_layout = MDBoxLayout(
+            orientation="vertical",
+            size_hint_y=0.3,
+            spacing="4dp"
+        )
+        
         self.wind_label = MDLabel(
-            text=f"Wind: {self.wind_speed} km/h",
-            theme_text_color="Secondary"
+            text=f"Wind: {self.wind_speed} mph",
+            theme_text_color="Secondary",
+            font_style="Body2"
         )
         self.humidity_label = MDLabel(
             text=f"Humidity: {self.humidity}%",
-            theme_text_color="Secondary"
+            theme_text_color="Secondary",
+            font_style="Body2"
+        )
+        self.update_label = MDLabel(
+            text=self.last_update,
+            theme_text_color="Hint",
+            font_style="Caption"
         )
         
-        # Set up layout
-        location_layout = BoxLayout(orientation="vertical", size_hint_y=0.4)
-        location_layout.add_widget(self.location_label)
-        location_layout.add_widget(self.zip_label)
-        self.add_widget(location_layout)
-        
-        weather_layout = BoxLayout(orientation="vertical", size_hint_y=0.6)
-        weather_layout.add_widget(self.temp_label)
-        weather_layout.add_widget(self.desc_label)
-        weather_layout.add_widget(self.wind_label)
-        weather_layout.add_widget(self.humidity_label)
-        self.add_widget(weather_layout)
+        details_layout.add_widget(self.wind_label)
+        details_layout.add_widget(self.humidity_label)
+        details_layout.add_widget(self.update_label)
+        self.add_widget(details_layout)
         
         # Bind properties
         self.bind(
@@ -104,81 +183,59 @@ class WeatherCard(MDCard):
             temperature=self._on_temperature,
             description=self._on_description,
             wind_speed=self._on_wind_speed,
-            humidity=self._on_humidity
+            humidity=self._on_humidity,
+            icon_url=self._on_icon_url,
+            last_update=self._on_last_update
         )
     
     def _on_location_name(self, instance, value):
-        """
-        Update the location name label when the property changes.
-        
-        Args:
-            instance: The widget instance
-            value: The new location name
-        """
+        """Update the location name label."""
         self.location_label.text = value
     
     def _on_zip_code(self, instance, value):
-        """
-        Update the ZIP code label when the property changes.
-        
-        Args:
-            instance: The widget instance
-            value: The new ZIP code
-        """
+        """Update the ZIP code label."""
         self.zip_label.text = f"ZIP: {value}"
     
     def _on_temperature(self, instance, value):
-        """
-        Update the temperature label when the property changes.
-        
-        Args:
-            instance: The widget instance
-            value: The new temperature value
-        """
-        self.temp_label.text = f"{value}°C"
+        """Update the temperature label."""
+        self.temp_label.text = f"{value}°F"
     
     def _on_description(self, instance, value):
-        """
-        Update the weather description label when the property changes.
-        
-        Args:
-            instance: The widget instance
-            value: The new weather description
-        """
+        """Update the weather description label."""
         self.desc_label.text = value
     
     def _on_wind_speed(self, instance, value):
-        """
-        Update the wind speed label when the property changes.
-        
-        Args:
-            instance: The widget instance
-            value: The new wind speed value
-        """
-        self.wind_label.text = f"Wind: {value} km/h"
+        """Update the wind speed label."""
+        self.wind_label.text = f"Wind: {value} mph"
     
     def _on_humidity(self, instance, value):
-        """
-        Update the humidity label when the property changes.
-        
-        Args:
-            instance: The widget instance
-            value: The new humidity value
-        """
+        """Update the humidity label."""
         self.humidity_label.text = f"Humidity: {value}%"
+    
+    def _on_icon_url(self, instance, value):
+        """Update the weather icon."""
+        self.icon_image.source = value
+    
+    def _on_last_update(self, instance, value):
+        """Update the last update time label."""
+        self.update_label.text = value
+    
+    def _on_refresh_press(self, instance):
+        """Handle refresh button press."""
+        if self.on_refresh:
+            self.on_refresh(self.zip_code)
+    
+    def _on_remove_press(self, instance):
+        """Handle remove button press."""
+        if self.on_remove:
+            self.on_remove(self.zip_code)
     
     def update(self, weather_data):
         """
-        Update the card with new weather data.
+        Update the card with new weather data
         
         Args:
-            weather_data (dict): Dictionary containing weather information with keys:
-                - location_name (str): Name of the location
-                - zip_code (str): ZIP code of the location
-                - temperature (str/float): Current temperature
-                - description (str): Weather description
-                - wind_speed (str/float): Current wind speed
-                - humidity (str/int): Current humidity percentage
+            weather_data: Dictionary containing weather information
         """
         self.location_name = weather_data.get('location_name', '')
         self.zip_code = weather_data.get('zip_code', '')
@@ -186,13 +243,5 @@ class WeatherCard(MDCard):
         self.description = weather_data.get('description', '')
         self.wind_speed = weather_data.get('wind_speed', '0')
         self.humidity = weather_data.get('humidity', '0')
-    
-    def on_remove(self):
-        """Handle the remove button click event."""
-        if self.remove_callback:
-            self.remove_callback(self.zip_code)
-            
-    def on_refresh(self):
-        """Handle the refresh button click event."""
-        if self.refresh_callback:
-            self.refresh_callback(self.zip_code) 
+        self.icon_url = weather_data.get('icon_url', '')
+        self.last_update = weather_data.get('last_update', '')

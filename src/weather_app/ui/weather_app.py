@@ -259,9 +259,15 @@ class WeatherAppLayout(MDScreen):
         """
         zip_code = weather_data.zip_code
         
+        # Format last update time
+        last_update = datetime.now().strftime("Updated: %I:%M %p")
+        
         # Create or update card
         if zip_code not in self.weather_cards:
-            card = WeatherCard()
+            card = WeatherCard(
+                on_refresh=self._refresh_location,
+                on_remove=self._remove_location
+            )
             self.weather_cards[zip_code] = card
             self.location_list.add_widget(card)
             
@@ -279,12 +285,59 @@ class WeatherAppLayout(MDScreen):
         
         # Update card data
         card = self.weather_cards[zip_code]
-        card.location_name = weather_data.location
-        card.zip_code = weather_data.zip_code
-        card.temperature = str(weather_data.temperature)
-        card.description = weather_data.description
-        card.wind_speed = str(weather_data.wind_speed)
-        card.humidity = str(weather_data.humidity)
+        card.update({
+            'location_name': weather_data.location,
+            'zip_code': weather_data.zip_code,
+            'temperature': str(weather_data.temperature),
+            'description': weather_data.description,
+            'wind_speed': str(weather_data.wind_speed),
+            'humidity': str(weather_data.humidity),
+            'icon_url': weather_data.icon_url,
+            'last_update': last_update
+        })
+    
+    def _refresh_location(self, zip_code: str):
+        """
+        Refresh weather data for a specific location.
+        
+        Args:
+            zip_code: The ZIP code to refresh
+        """
+        if zip_code in self.weather_cards:
+            self._fetch_weather(zip_code)
+    
+    def _remove_location(self, zip_code: str):
+        """
+        Remove a location from the display and storage.
+        
+        Args:
+            zip_code: The ZIP code to remove
+        """
+        if zip_code in self.weather_cards:
+            # Remove from UI with animation
+            card = self.weather_cards[zip_code]
+            anim = Animation(opacity=0, height=0, duration=0.3)
+            anim.bind(on_complete=lambda *args: self._complete_remove(zip_code, card))
+            anim.start(card)
+    
+    def _complete_remove(self, zip_code: str, card: WeatherCard):
+        """
+        Complete the location removal process.
+        
+        Args:
+            zip_code: The ZIP code being removed
+            card: The card widget to remove
+        """
+        # Remove from UI
+        self.location_list.remove_widget(card)
+        del self.weather_cards[zip_code]
+        
+        # Remove from storage
+        try:
+            self.location_storage.remove_location(zip_code)
+        except Exception as e:
+            logger.error(f"Failed to remove location from storage: {e}")
+            self._show_error("Failed to remove location from storage")
     
     def _show_error(self, message: str):
         """

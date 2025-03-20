@@ -22,7 +22,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class WeatherData:
-    """Data class for weather information"""
+    """
+    Data class for weather information.
+    
+    Attributes:
+        temperature: Current temperature in Fahrenheit
+        location: Location name
+        description: Weather description
+        humidity: Humidity percentage
+        wind_speed: Wind speed in mph
+        icon_url: URL to the weather icon
+        timestamp: Time when the data was fetched
+        zip_code: ZIP code for the location
+    """
     temperature: float
     location: str
     description: str
