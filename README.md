@@ -87,4 +87,55 @@ SimpleWeatherApp/
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+# Testing
+
+## Running Tests
+
+To run the test suite:
+
+1. Install test dependencies:
+```bash
+pip install -r requirements-test.txt
+```
+
+2. Run tests with coverage:
+```bash
+pytest tests/ --cov=weather_app --cov-report=html
+```
+
+This will run all tests and generate a coverage report in the `htmlcov` directory.
+
+## Test Structure
+
+The test suite is organized into three categories:
+
+1. Unit Tests (`tests/unit/`):
+   - `test_weather_client.py`: Tests for the WeatherStack API client
+   - `test_location_storage.py`: Tests for location data storage
+
+2. UI Tests (`tests/ui/`):
+   - `test_weather_app.py`: Tests for the main application UI
+
+3. Integration Tests (`tests/integration/`):
+   - Tests for component interactions
+
+## Test Coverage
+
+The test suite covers:
+- API client functionality
+- Location storage operations
+- UI component behavior
+- Error handling
+- Resource cleanup
+- Keyboard event handling
+
+## Writing New Tests
+
+When adding new features, please follow these guidelines:
+1. Add unit tests for new functionality
+2. Update integration tests if component interactions change
+3. Add UI tests for new UI components
+4. Ensure all tests pass before submitting changes
+5. Maintain or improve code coverage 
