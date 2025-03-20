@@ -1,9 +1,34 @@
+"""
+Configuration Helper Module
+
+This module provides a GUI dialog for configuring the WeatherApp.
+It handles:
+1. API key configuration
+2. Environment file management
+3. Input validation
+4. User interaction
+"""
+
 import os
 import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
 
 def save_api_key(api_key):
+    """
+    Save the WeatherStack API key to the environment file.
+    
+    This function:
+    1. Validates the API key format
+    2. Creates or updates the .env file
+    3. Handles file I/O errors
+    
+    Args:
+        api_key: The API key to save
+        
+    Returns:
+        bool: True if the API key was saved successfully, False otherwise
+    """
     try:
         env_path = Path(__file__).parent / '.env'
         with open(env_path, 'w') as f:
@@ -13,13 +38,41 @@ def save_api_key(api_key):
         return False
 
 def validate_api_key(api_key):
-    # Basic validation
+    """
+    Validate the WeatherStack API key format.
+    
+    Args:
+        api_key: The API key to validate
+        
+    Returns:
+        bool: True if the API key is valid, False otherwise
+    """
     if not api_key or len(api_key.strip()) < 32:
         return False
     return True
 
 class ConfigDialog:
+    """
+    Configuration dialog for setting up the WeatherStack API key.
+    
+    This class provides:
+    1. A graphical interface for API key input
+    2. Input validation
+    3. Error handling
+    4. Persistent storage
+    5. User feedback
+    """
+    
     def __init__(self):
+        """
+        Initialize the configuration dialog window.
+        
+        Sets up:
+        1. Window properties
+        2. UI components
+        3. Event handlers
+        4. Layout and styling
+        """
         self.root = tk.Tk()
         self.root.title('WeatherApp Configuration')
         self.root.geometry('400x200')
@@ -54,10 +107,20 @@ class ConfigDialog:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
     
     def open_weatherstack(self):
+        """Open the WeatherStack signup page in the default web browser."""
         import webbrowser
         webbrowser.open('https://weatherstack.com/signup')
     
     def save_and_exit(self):
+        """
+        Validate and save the API key, then close the dialog.
+        
+        This method:
+        1. Validates the API key format
+        2. Saves the key to the environment file
+        3. Shows appropriate success/error messages
+        4. Closes the dialog on success
+        """
         api_key = self.api_key.get().strip()
         if not validate_api_key(api_key):
             messagebox.showerror('Invalid API Key', 
@@ -73,14 +136,27 @@ class ConfigDialog:
                                'Failed to save API key. Please check file permissions.')
     
     def on_closing(self):
+        """
+        Handle the window close event.
+        
+        Shows a confirmation dialog since closing without an API key
+        will prevent the app from working.
+        """
         if messagebox.askokcancel('Quit', 
                                 'Without an API key, the app won\'t work. Are you sure you want to quit?'):
             self.root.quit()
     
     def run(self):
+        """Start the configuration dialog main loop."""
         self.root.mainloop()
 
 def main():
+    """
+    Main entry point for the configuration helper.
+    
+    Checks if the API key is configured and launches the
+    configuration dialog if needed.
+    """
     # Check if .env exists and has API key
     env_path = Path(__file__).parent / '.env'
     if not env_path.exists() or 'WEATHERSTACK_API_KEY' not in env_path.read_text():

@@ -44,6 +44,7 @@ from kivymd.uix.list import MDList, TwoLineIconListItem, IconLeftWidget
 from kivymd.icon_definitions import md_icons
 from kivy.animation import Animation
 from kivy.uix.floatlayout import FloatLayout
+from kivy.utils import platform
 
 from weather_app.api.weather_client import WeatherStackClient, WeatherData
 from weather_app.storage.location_storage import LocationStorage
@@ -63,9 +64,30 @@ class FocusTextInput(TextInput):
         return False
 
 class WeatherAppLayout(MDScreen):
-    """Main layout for the weather application."""
+    """
+    Main layout for the weather application.
+    
+    This class provides:
+    1. Weather data display
+    2. Location management
+    3. User input handling
+    4. Error handling
+    5. Persistent storage
+    """
     
     def __init__(self, **kwargs):
+        """
+        Initialize the weather app layout.
+        
+        Sets up:
+        1. API client
+        2. Storage system
+        3. UI components
+        4. Event handlers
+        
+        Args:
+            **kwargs: Additional keyword arguments passed to parent class
+        """
         super().__init__(**kwargs)
         # Initialize components
         api_key = os.getenv('WEATHERSTACK_API_KEY', '').strip()
@@ -80,7 +102,12 @@ class WeatherAppLayout(MDScreen):
         )
         
         # Ensure data directory exists
-        data_dir = os.path.join(os.getcwd(), 'data')
+        if platform == 'android':
+            from android.storage import primary_external_storage_path
+            data_dir = os.path.join(primary_external_storage_path(), 'WeatherApp')
+        else:
+            data_dir = os.path.join(os.getcwd(), 'data')
+        
         os.makedirs(data_dir, exist_ok=True)
         storage_file = os.path.join(data_dir, 'locations.json')
         self.location_storage = LocationStorage(storage_file=storage_file)
@@ -91,69 +118,57 @@ class WeatherAppLayout(MDScreen):
         self._load_saved_locations()
     
     def _setup_ui(self):
-        """Set up the user interface components."""
+        """
+        Set up the user interface components.
+        
+        Creates and configures:
+        1. Top app bar
+        2. Search input field
+        3. Weather card list
+        4. Layout containers
+        """
         # Create main layout
-        main_layout = BoxLayout(
-            orientation='vertical',
-            spacing="16dp",
-            padding="16dp"
-        )
+        main_layout = MDBoxLayout(orientation='vertical')
         
-        # Top app bar
-        self.top_bar = MDTopAppBar(
-            title="Weather App",
-            elevation=4,
-            pos_hint={"top": 1}
+        # Add toolbar
+        toolbar = MDTopAppBar(
+            title='Weather App',
+            elevation=2,
+            md_bg_color=self.theme_cls.primary_color
         )
-        main_layout.add_widget(self.top_bar)
+        main_layout.add_widget(toolbar)
         
-        # Search section with card
-        search_card = MDCard(
+        # Add search input
+        search_layout = MDBoxLayout(
             orientation='horizontal',
+            padding=dp(8),
+            spacing=dp(8),
             size_hint_y=None,
-            height="56dp",
-            padding="8dp",
-            spacing="8dp",
-            pos_hint={"top": 0.95}
+            height=dp(56)
         )
         
-        # Input field
-        self.search_input = TextInput(
-            text='',
+        self.search_input = FocusTextInput(
             hint_text='Enter ZIP code',
             multiline=False,
-            size_hint_x=0.7,
-            height="40dp",
-            background_color=(0.95, 0.95, 0.95, 1),
-            foreground_color=(0, 0, 0, 1),
-            cursor_color=(0, 0, 0, 1),
-            padding=(15, 10),
-            font_size='16sp'
+            size_hint_x=0.8,
+            on_text_validate=self._on_search
         )
-        self.search_input.bind(
-            on_text_validate=self._on_search,
-            focus=self._on_focus
-        )
-        search_card.add_widget(self.search_input)
+        search_layout.add_widget(self.search_input)
         
-        # Save button
-        self.save_button = MDRaisedButton(
-            text="Save",
-            size_hint_x=0.3,
-            height="40dp",
+        search_button = MDRaisedButton(
+            text='Search',
+            size_hint_x=0.2,
             on_release=lambda x: self._on_search(self.search_input)
         )
-        search_card.add_widget(self.save_button)
-        main_layout.add_widget(search_card)
+        search_layout.add_widget(search_button)
         
-        # Location list with scroll view
-        scroll_view = ScrollView(
-            do_scroll_x=False,
-            size_hint=(1, 1)
-        )
+        main_layout.add_widget(search_layout)
+        
+        # Add scrollable list for weather cards
+        scroll = ScrollView()
         self.location_list = MDList()
-        scroll_view.add_widget(self.location_list)
-        main_layout.add_widget(scroll_view)
+        scroll.add_widget(self.location_list)
+        main_layout.add_widget(scroll)
         
         # Add main layout to screen
         self.add_widget(main_layout)
@@ -162,7 +177,12 @@ class WeatherAppLayout(MDScreen):
         Clock.schedule_once(lambda dt: setattr(self.search_input, 'focus', True), 0.1)
     
     def _load_saved_locations(self):
-        """Load and display saved locations."""
+        """
+        Load and display saved locations.
+        
+        Retrieves saved locations from storage and fetches
+        their weather data for display.
+        """
         try:
             locations = self.location_storage.get_locations()
             for zip_code in locations:
@@ -175,7 +195,15 @@ class WeatherAppLayout(MDScreen):
             self._show_error("Failed to load saved locations")
     
     def _validate_zip_code(self, zip_code: str) -> bool:
-        """Validate ZIP code format."""
+        """
+        Validate ZIP code format.
+        
+        Args:
+            zip_code: The ZIP code to validate
+            
+        Returns:
+            bool: True if the ZIP code is valid, False otherwise
+        """
         if not zip_code.isdigit():
             self._show_error("ZIP code must contain only numbers")
             return False
@@ -187,7 +215,12 @@ class WeatherAppLayout(MDScreen):
         return True
     
     def _on_search(self, instance):
-        """Handle search input submission."""
+        """
+        Handle search input submission.
+        
+        Args:
+            instance: The input field instance
+        """
         zip_code = instance.text.strip()
         if zip_code and self._validate_zip_code(zip_code):
             self._fetch_weather(zip_code)
@@ -195,7 +228,12 @@ class WeatherAppLayout(MDScreen):
             self.search_input.focus = True  # Keep focus on input field
     
     def _fetch_weather(self, zip_code: str):
-        """Fetch weather data for a given ZIP code."""
+        """
+        Fetch weather data for a given ZIP code.
+        
+        Args:
+            zip_code: The ZIP code to fetch weather for
+        """
         try:
             weather_data = self.weather_client.get_weather(zip_code)
             if weather_data:
@@ -213,7 +251,12 @@ class WeatherAppLayout(MDScreen):
             self._show_error(f"Failed to fetch weather for {zip_code}")
     
     def _update_weather_display(self, weather_data: WeatherData):
-        """Update the weather display with new data."""
+        """
+        Update the weather display with new data.
+        
+        Args:
+            weather_data: The weather data to display
+        """
         zip_code = weather_data.zip_code
         
         # Create or update card
@@ -244,7 +287,12 @@ class WeatherAppLayout(MDScreen):
         card.humidity = str(weather_data.humidity)
     
     def _show_error(self, message: str):
-        """Show an error message to the user."""
+        """
+        Show an error message to the user.
+        
+        Args:
+            message: The error message to display
+        """
         logger.error(message)
         # Create and show error popup
         popup = Popup(
@@ -256,21 +304,47 @@ class WeatherAppLayout(MDScreen):
         popup.open()
     
     def _on_focus(self, instance, value):
-        """Handle input field focus changes."""
+        """
+        Handle input field focus changes.
+        
+        Args:
+            instance: The input field instance
+            value: True if focused, False otherwise
+        """
         if value:  # If focused
             instance.background_color = (1, 1, 1, 1)
         else:
             instance.background_color = (0.95, 0.95, 0.95, 1)
 
 class WeatherApp(MDApp):
-    """Main application class."""
+    """
+    Main application class for the Weather App.
+    
+    This class:
+    1. Initializes the application
+    2. Sets up the theme and styling
+    3. Creates the main layout
+    4. Handles application lifecycle
+    """
     
     def build(self):
-        """Build the application."""
+        """
+        Build and return the application's root widget.
+        
+        This method:
+        1. Sets up the application theme
+        2. Creates the main layout
+        3. Initializes UI components
+        
+        Returns:
+            WeatherAppLayout: The root widget of the application
+        """
         # Configure window
-        Window.size = (400, 600)
-        Window.minimum_width = 400
-        Window.minimum_height = 600
+        if platform != 'android':
+            Window.size = (400, 600)
+            Window.minimum_width = 400
+            Window.minimum_height = 600
+        
         Window.softinput_mode = 'below_target'  # Keep input field visible when keyboard appears
         Window.keyboard_anim_args = {'d': .2, 't': 'in_out_expo'}
         Window.keyboard_padding = 0
@@ -286,6 +360,15 @@ class WeatherApp(MDApp):
     
     def on_start(self):
         """Called when the application starts."""
+        # Request necessary Android permissions
+        if platform == 'android':
+            from android.permissions import request_permissions, Permission
+            request_permissions([
+                Permission.INTERNET,
+                Permission.WRITE_EXTERNAL_STORAGE,
+                Permission.READ_EXTERNAL_STORAGE
+            ])
+        
         # Bind keyboard events
         Window.bind(
             on_key_down=self._on_keyboard_down,
@@ -306,17 +389,43 @@ class WeatherApp(MDApp):
             logger.error(f"Error during weather app cleanup: {e}")
     
     def _keyboard_closed(self):
-        """Handle keyboard close."""
+        """
+        Handle keyboard close event.
+        
+        Unbinds the keyboard event handler when the keyboard is closed.
+        """
         Window.unbind(on_keyboard=self._on_keyboard)
     
     def _on_keyboard(self, window, key, *args):
-        """Handle keyboard events."""
+        """
+        Handle keyboard events.
+        
+        Args:
+            window: The window instance
+            key: The key code
+            *args: Additional arguments
+            
+        Returns:
+            bool: True if the event was handled, False otherwise
+        """
         if key == 27:  # ESC key
             return True  # Prevent app from closing
         return False
     
     def _on_keyboard_down(self, instance, keyboard, keycode, text, modifiers):
-        """Handle keyboard down events."""
+        """
+        Handle keyboard down events.
+        
+        Args:
+            instance: The widget instance
+            keyboard: The keyboard instance
+            keycode: The key code
+            text: The text input
+            modifiers: List of active modifiers
+            
+        Returns:
+            bool: True if the event was handled, False otherwise
+        """
         if keycode == 40:  # Enter key
             self.root.search_input.focus = True
             return True

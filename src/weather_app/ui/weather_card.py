@@ -1,4 +1,13 @@
-"""Weather card widget for displaying weather information"""
+"""
+Weather Card UI Component
+
+This module provides a Material Design card component for displaying weather information.
+It includes:
+1. Real-time weather data display
+2. Dynamic updates
+3. Interactive elements
+4. Responsive layout
+"""
 
 from kivy.uix.boxlayout import BoxLayout
 from kivy.properties import StringProperty
@@ -7,14 +16,19 @@ from kivymd.uix.label import MDLabel
 
 class WeatherCard(MDCard):
     """
-    A card widget for displaying weather information
+    Material Design card component for displaying weather information.
     
-    This widget displays:
+    This card displays:
     1. Location name and ZIP code
-    2. Temperature in Celsius
+    2. Current temperature
     3. Weather description
-    4. Wind speed in km/h
-    5. Humidity percentage
+    4. Wind speed
+    5. Humidity level
+    6. Last update time
+    
+    The card updates automatically when new weather data is received
+    and provides interactive elements for refreshing data or removing
+    the location.
     """
     
     location_name = StringProperty("")
@@ -25,6 +39,15 @@ class WeatherCard(MDCard):
     humidity = StringProperty("0")
     
     def __init__(self, **kwargs):
+        """
+        Initialize the weather card component.
+        
+        Sets up:
+        1. Card layout and styling
+        2. Weather data properties
+        3. Interactive elements
+        4. Update handlers
+        """
         super().__init__(**kwargs)
         self.orientation = "vertical"
         self.padding = "8dp"
@@ -85,33 +108,91 @@ class WeatherCard(MDCard):
         )
     
     def _on_location_name(self, instance, value):
+        """
+        Update the location name label when the property changes.
+        
+        Args:
+            instance: The widget instance
+            value: The new location name
+        """
         self.location_label.text = value
     
     def _on_zip_code(self, instance, value):
+        """
+        Update the ZIP code label when the property changes.
+        
+        Args:
+            instance: The widget instance
+            value: The new ZIP code
+        """
         self.zip_label.text = f"ZIP: {value}"
     
     def _on_temperature(self, instance, value):
+        """
+        Update the temperature label when the property changes.
+        
+        Args:
+            instance: The widget instance
+            value: The new temperature value
+        """
         self.temp_label.text = f"{value}°C"
     
     def _on_description(self, instance, value):
+        """
+        Update the weather description label when the property changes.
+        
+        Args:
+            instance: The widget instance
+            value: The new weather description
+        """
         self.desc_label.text = value
     
     def _on_wind_speed(self, instance, value):
+        """
+        Update the wind speed label when the property changes.
+        
+        Args:
+            instance: The widget instance
+            value: The new wind speed value
+        """
         self.wind_label.text = f"Wind: {value} km/h"
     
     def _on_humidity(self, instance, value):
+        """
+        Update the humidity label when the property changes.
+        
+        Args:
+            instance: The widget instance
+            value: The new humidity value
+        """
         self.humidity_label.text = f"Humidity: {value}%"
     
     def update(self, weather_data):
         """
-        Update the card with new weather data
+        Update the card with new weather data.
         
         Args:
-            weather_data: Dictionary containing weather information
+            weather_data (dict): Dictionary containing weather information with keys:
+                - location_name (str): Name of the location
+                - zip_code (str): ZIP code of the location
+                - temperature (str/float): Current temperature
+                - description (str): Weather description
+                - wind_speed (str/float): Current wind speed
+                - humidity (str/int): Current humidity percentage
         """
         self.location_name = weather_data.get('location_name', '')
         self.zip_code = weather_data.get('zip_code', '')
         self.temperature = weather_data.get('temperature', '0')
         self.description = weather_data.get('description', '')
         self.wind_speed = weather_data.get('wind_speed', '0')
-        self.humidity = weather_data.get('humidity', '0') 
+        self.humidity = weather_data.get('humidity', '0')
+    
+    def on_remove(self):
+        """Handle the remove button click event."""
+        if self.remove_callback:
+            self.remove_callback(self.zip_code)
+            
+    def on_refresh(self):
+        """Handle the refresh button click event."""
+        if self.refresh_callback:
+            self.refresh_callback(self.zip_code) 

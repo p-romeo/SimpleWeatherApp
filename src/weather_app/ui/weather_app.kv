@@ -1,0 +1,65 @@
+#:kivy 2.3.0
+#:import MDCard kivymd.uix.card.MDCard
+#:import MDLabel kivymd.uix.label.MDLabel
+
+<WeatherCard>:
+    orientation: "vertical"
+    padding: "8dp"
+    spacing: "8dp"
+    size_hint_y: None
+    height: "200dp"
+    elevation: 2
+    md_bg_color: app.theme_cls.bg_light
+
+<WeatherAppLayout>:
+    canvas.before:
+        Color:
+            rgba: app.theme_cls.bg_normal
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    MDBoxLayout:
+        orientation: 'vertical'
+        spacing: "16dp"
+        padding: "16dp"
+
+        MDTopAppBar:
+            title: "Weather App"
+            elevation: 4
+            pos_hint: {"top": 1}
+
+        MDCard:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: "56dp"
+            padding: "8dp"
+            spacing: "8dp"
+            pos_hint: {"top": 0.95}
+            md_bg_color: app.theme_cls.bg_light
+
+            TextInput:
+                id: search_input
+                text: ''
+                hint_text: 'Enter ZIP code'
+                multiline: False
+                size_hint_x: 0.7
+                height: "40dp"
+                background_color: 0.95, 0.95, 0.95, 1
+                foreground_color: 0, 0, 0, 1
+                cursor_color: 0, 0, 0, 1
+                padding: 15, 10
+                font_size: '16sp'
+
+            MDRaisedButton:
+                text: "Save"
+                size_hint_x: 0.3
+                height: "40dp"
+                on_release: root._on_search(search_input)
+
+        ScrollView:
+            do_scroll_x: False
+            size_hint: 1, 1
+
+            MDList:
+                id: location_list 
