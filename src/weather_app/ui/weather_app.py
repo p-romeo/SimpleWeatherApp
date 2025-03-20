@@ -45,6 +45,8 @@ from kivymd.icon_definitions import md_icons
 from kivy.animation import Animation
 from kivy.uix.floatlayout import FloatLayout
 from kivy.utils import platform
+from kivymd.uix.dialog import MDDialog
+from kivymd.uix.gridlayout import MDGridLayout
 
 from weather_app.api.weather_client import WeatherStackClient, WeatherData
 from weather_app.storage.location_storage import LocationStorage
@@ -63,311 +65,137 @@ class FocusTextInput(TextInput):
             return super().on_touch_down(touch)
         return False
 
-class WeatherAppLayout(MDScreen):
+class WeatherAppLayout(MDBoxLayout):
     """
-    Main layout for the weather application.
-    
-    This class provides:
-    1. Weather data display
-    2. Location management
-    3. User input handling
-    4. Error handling
-    5. Persistent storage
+    Main layout class for the Weather App interface.
+    Manages the weather display, search functionality, and location storage.
     """
     
     def __init__(self, **kwargs):
-        """
-        Initialize the weather app layout.
-        
-        Sets up:
-        1. API client
-        2. Storage system
-        3. UI components
-        4. Event handlers
-        
-        Args:
-            **kwargs: Additional keyword arguments passed to parent class
-        """
+        """Initialize the WeatherAppLayout with search box and weather display area."""
         super().__init__(**kwargs)
+        
         # Initialize components
-        api_key = os.getenv('WEATHERSTACK_API_KEY', '').strip()
-        if not api_key:
-            self._show_error("API key not found. Please check your environment variables.")
-            return
-            
-        self.weather_client = WeatherStackClient(
-            api_key=api_key,
-            cache_timeout=300,  # 5 minutes
-            request_timeout=10   # 10 seconds
+        self.orientation = 'vertical'
+        self.padding = dp(10)
+        self.spacing = dp(10)
+        
+        # Initialize weather client and storage
+        self.weather_client = WeatherStackClient(API_KEY)
+        self.location_storage = LocationStorage()
+        
+        # Create layout for weather cards
+        self.weather_cards_layout = MDGridLayout(
+            cols=1,
+            spacing=dp(10),
+            padding=dp(10),
+            adaptive_height=True
         )
         
-        # Ensure data directory exists
-        if platform == 'android':
-            from android.storage import primary_external_storage_path
-            data_dir = os.path.join(primary_external_storage_path(), 'WeatherApp')
-        else:
-            data_dir = os.path.join(os.getcwd(), 'data')
+        # Dictionary to keep track of weather cards
+        self.weather_cards = {}
         
-        os.makedirs(data_dir, exist_ok=True)
-        storage_file = os.path.join(data_dir, 'locations.json')
-        self.location_storage = LocationStorage(storage_file=storage_file)
+        # Set up the UI components
+        self._setup_search_box()
+        self._setup_scroll_view()
         
-        self.orientation = 'vertical'
-        self.weather_cards = {}  # Dictionary to store cards by zip code
-        self._setup_ui()
+        # Load saved locations
         self._load_saved_locations()
     
-    def _setup_ui(self):
+    def _on_favorite_toggle(self, zip_code: str, is_favorite: bool):
         """
-        Set up the user interface components.
+        Handle toggling favorite status for a location.
         
-        Creates and configures:
-        1. Top app bar
-        2. Search input field
-        3. Weather card list
-        4. Layout containers
-        """
-        # Create main layout
-        main_layout = MDBoxLayout(orientation='vertical')
-        
-        # Add toolbar
-        toolbar = MDTopAppBar(
-            title='Weather App',
-            elevation=2,
-            md_bg_color=self.theme_cls.primary_color
-        )
-        main_layout.add_widget(toolbar)
-        
-        # Add search input
-        search_layout = MDBoxLayout(
-            orientation='horizontal',
-            padding=dp(8),
-            spacing=dp(8),
-            size_hint_y=None,
-            height=dp(56)
-        )
-        
-        self.search_input = FocusTextInput(
-            hint_text='Enter ZIP code',
-            multiline=False,
-            size_hint_x=0.8,
-            on_text_validate=self._on_search
-        )
-        search_layout.add_widget(self.search_input)
-        
-        search_button = MDRaisedButton(
-            text='Search',
-            size_hint_x=0.2,
-            on_release=lambda x: self._on_search(self.search_input)
-        )
-        search_layout.add_widget(search_button)
-        
-        main_layout.add_widget(search_layout)
-        
-        # Add scrollable list for weather cards
-        scroll = ScrollView()
-        self.location_list = MDList()
-        scroll.add_widget(self.location_list)
-        main_layout.add_widget(scroll)
-        
-        # Add main layout to screen
-        self.add_widget(main_layout)
-        
-        # Set initial focus to search input
-        Clock.schedule_once(lambda dt: setattr(self.search_input, 'focus', True), 0.1)
-    
-    def _load_saved_locations(self):
-        """
-        Load and display saved locations.
-        
-        Retrieves saved locations from storage and fetches
-        their weather data for display.
+        Args:
+            zip_code: The ZIP code of the location
+            is_favorite: The new favorite status
         """
         try:
-            locations = self.location_storage.get_locations()
-            for zip_code in locations:
-                Clock.schedule_once(
-                    lambda dt, code=zip_code: self._fetch_weather(code),
-                    0.1
-                )
-        except Exception as e:
-            logger.error(f"Error loading saved locations: {e}")
-            self._show_error("Failed to load saved locations")
-    
-    def _validate_zip_code(self, zip_code: str) -> bool:
-        """
-        Validate ZIP code format.
-        
-        Args:
-            zip_code: The ZIP code to validate
+            self.location_storage.set_favorite(zip_code, is_favorite)
             
-        Returns:
-            bool: True if the ZIP code is valid, False otherwise
-        """
-        if not zip_code.isdigit():
-            self._show_error("ZIP code must contain only numbers")
-            return False
-        
-        if len(zip_code) != 5:
-            self._show_error("ZIP code must be 5 digits")
-            return False
-        
-        return True
-    
-    def _on_search(self, instance):
-        """
-        Handle search input submission.
-        
-        Args:
-            instance: The input field instance
-        """
-        zip_code = instance.text.strip()
-        if zip_code and self._validate_zip_code(zip_code):
-            self._fetch_weather(zip_code)
-            self.search_input.text = ""  # Clear the input field
-            self.search_input.focus = True  # Keep focus on input field
-    
-    def _fetch_weather(self, zip_code: str):
-        """
-        Fetch weather data for a given ZIP code.
-        
-        Args:
-            zip_code: The ZIP code to fetch weather for
-        """
-        try:
-            weather_data = self.weather_client.get_weather(zip_code)
-            if weather_data:
-                self._update_weather_display(weather_data)
-            else:
-                self._show_error(f"No weather data found for ZIP code {zip_code}")
-        except ValueError as e:
-            logger.error(f"Invalid weather data for {zip_code}: {e}")
-            self._show_error(f"Invalid weather data for {zip_code}")
-        except ConnectionError as e:
-            logger.error(f"Connection error for {zip_code}: {e}")
-            self._show_error("Connection error. Please check your internet connection.")
-        except Exception as e:
-            logger.error(f"Error fetching weather for {zip_code}: {e}")
-            self._show_error(f"Failed to fetch weather for {zip_code}")
-    
-    def _update_weather_display(self, weather_data: WeatherData):
-        """
-        Update the weather display with new data.
-        
-        Args:
-            weather_data: The weather data to display
-        """
-        zip_code = weather_data.zip_code
-        
-        # Format last update time
-        last_update = datetime.now().strftime("Updated: %I:%M %p")
-        
-        # Create or update card
-        if zip_code not in self.weather_cards:
-            card = WeatherCard(
-                on_refresh=self._refresh_location,
-                on_remove=self._remove_location
-            )
-            self.weather_cards[zip_code] = card
-            self.location_list.add_widget(card)
+            # Reorder cards based on favorite status
+            self._reorder_weather_cards()
             
-            # Save new location
-            try:
-                self.location_storage.add_location(zip_code, weather_data.location)
-            except Exception as e:
-                logger.error(f"Failed to save location: {e}")
-                self._show_error("Failed to save location")
-            
-            # Animate card appearance
-            card.opacity = 0
-            anim = Animation(opacity=1, duration=0.3)
-            anim.start(card)
-        
-        # Update card data
-        card = self.weather_cards[zip_code]
-        card.update({
-            'location_name': weather_data.location,
-            'zip_code': weather_data.zip_code,
-            'temperature': str(weather_data.temperature),
-            'description': weather_data.description,
-            'wind_speed': str(weather_data.wind_speed),
-            'humidity': str(weather_data.humidity),
-            'icon_url': weather_data.icon_url,
-            'last_update': last_update
-        })
-    
-    def _refresh_location(self, zip_code: str):
-        """
-        Refresh weather data for a specific location.
-        
-        Args:
-            zip_code: The ZIP code to refresh
-        """
-        if zip_code in self.weather_cards:
-            self._fetch_weather(zip_code)
-    
-    def _remove_location(self, zip_code: str):
-        """
-        Remove a location from the display and storage.
-        
-        Args:
-            zip_code: The ZIP code to remove
-        """
-        if zip_code in self.weather_cards:
-            # Remove from UI with animation
-            card = self.weather_cards[zip_code]
-            anim = Animation(opacity=0, height=0, duration=0.3)
-            anim.bind(on_complete=lambda *args: self._complete_remove(zip_code, card))
-            anim.start(card)
-    
-    def _complete_remove(self, zip_code: str, card: WeatherCard):
-        """
-        Complete the location removal process.
-        
-        Args:
-            zip_code: The ZIP code being removed
-            card: The card widget to remove
-        """
-        # Remove from UI
-        self.location_list.remove_widget(card)
-        del self.weather_cards[zip_code]
-        
-        # Remove from storage
-        try:
-            self.location_storage.remove_location(zip_code)
         except Exception as e:
-            logger.error(f"Failed to remove location from storage: {e}")
-            self._show_error("Failed to remove location from storage")
+            self._show_error(f"Failed to update favorite status: {str(e)}")
+    
+    def _reorder_weather_cards(self):
+        """
+        Reorder weather cards to show favorites first.
+        """
+        # Remove all cards from layout
+        self.weather_cards_layout.clear_widgets()
+        
+        # Sort cards: favorites first, then by name
+        sorted_cards = sorted(
+            self.weather_cards.items(),
+            key=lambda x: (not self.location_storage.is_favorite(x[0]), x[1].location_name)
+        )
+        
+        # Re-add cards in sorted order
+        for zip_code, card in sorted_cards:
+            self.weather_cards_layout.add_widget(card)
     
     def _show_error(self, message: str):
         """
-        Show an error message to the user.
+        Show an error dialog with the given message.
         
         Args:
             message: The error message to display
         """
-        logger.error(message)
-        # Create and show error popup
-        popup = Popup(
-            title='Error',
-            content=Label(text=message),
-            size_hint=(None, None),
-            size=(400, 200)
+        dialog = MDDialog(
+            title="Error",
+            text=message,
+            buttons=[
+                MDFlatButton(
+                    text="OK",
+                    on_release=lambda x: dialog.dismiss()
+                )
+            ]
         )
-        popup.open()
+        dialog.open()
     
-    def _on_focus(self, instance, value):
+    def _update_weather_display(self, weather_data: WeatherData, zip_code: str):
         """
-        Handle input field focus changes.
+        Update the weather display with new weather data.
         
         Args:
-            instance: The input field instance
-            value: True if focused, False otherwise
+            weather_data: The weather data to display
+            zip_code: The ZIP code for the location
         """
-        if value:  # If focused
-            instance.background_color = (1, 1, 1, 1)
-        else:
-            instance.background_color = (0.95, 0.95, 0.95, 1)
+        try:
+            if zip_code in self.weather_cards:
+                # Update existing card
+                card = self.weather_cards[zip_code]
+                card.update_weather(weather_data)
+                card.set_loading(False)
+            else:
+                # Create new card
+                is_favorite = self.location_storage.is_favorite(zip_code)
+                card = WeatherCard(
+                    location_name=weather_data.location_name,
+                    zip_code=zip_code,
+                    on_refresh=lambda: self._fetch_weather(zip_code),
+                    on_remove=lambda: self._remove_location(zip_code),
+                    on_favorite_toggle=lambda fav: self._on_favorite_toggle(zip_code, fav)
+                )
+                card.is_favorite = is_favorite
+                card.update_weather(weather_data)
+                self.weather_cards[zip_code] = card
+                
+                # Save new location
+                try:
+                    self.location_storage.add_location(zip_code, weather_data.location_name)
+                except Exception as e:
+                    logger.error(f"Failed to save location: {str(e)}")
+                
+                # Add card and reorder
+                self._reorder_weather_cards()
+                
+        except Exception as e:
+            self._show_error(f"Failed to update weather display: {str(e)}")
+            if zip_code in self.weather_cards:
+                self.weather_cards[zip_code].set_loading(False)
 
 class WeatherApp(MDApp):
     """

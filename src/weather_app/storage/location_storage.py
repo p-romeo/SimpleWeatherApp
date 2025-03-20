@@ -111,7 +111,8 @@ class LocationStorage:
         try:
             self.locations[zip_code] = {
                 'name': location_name,
-                'added_at': datetime.now().isoformat()
+                'added_at': datetime.now().isoformat(),
+                'is_favorite': False
             }
             self._save_locations()
             logger.info(f"Added location: {location_name} ({zip_code})")
@@ -191,6 +192,65 @@ class LocationStorage:
         except IOError as e:
             logger.error(f"Failed to clear locations: {str(e)}")
             raise
+    
+    def set_favorite(self, zip_code: str, is_favorite: bool) -> bool:
+        """
+        Set the favorite status of a location.
+        
+        Args:
+            zip_code: The ZIP code to update
+            is_favorite: True to mark as favorite, False otherwise
+            
+        Returns:
+            bool: True if the status was updated successfully
+            
+        Raises:
+            ValueError: If the ZIP code is invalid
+            KeyError: If the location doesn't exist
+            IOError: If there's an error saving to the storage file
+        """
+        if not self._validate_zip_code(zip_code):
+            raise ValueError(f"Invalid ZIP code format: {zip_code}")
+            
+        if zip_code not in self.locations:
+            raise KeyError(f"Location not found: {zip_code}")
+            
+        try:
+            self.locations[zip_code]['is_favorite'] = is_favorite
+            self._save_locations()
+            logger.info(f"Updated favorite status for {zip_code}: {is_favorite}")
+            return True
+        except IOError as e:
+            logger.error(f"Failed to update favorite status: {str(e)}")
+            raise
+    
+    def is_favorite(self, zip_code: str) -> bool:
+        """
+        Check if a location is marked as favorite.
+        
+        Args:
+            zip_code: The ZIP code to check
+            
+        Returns:
+            bool: True if the location is a favorite, False otherwise
+        """
+        if zip_code in self.locations:
+            return self.locations[zip_code].get('is_favorite', False)
+        return False
+    
+    def get_favorite_locations(self) -> Dict[str, str]:
+        """
+        Get all favorite locations.
+        
+        Returns:
+            Dict[str, str]: Dictionary mapping ZIP codes to location names
+            for favorite locations only
+        """
+        return {
+            zip_code: data['name']
+            for zip_code, data in self.locations.items()
+            if data.get('is_favorite', False)
+        }
     
     @staticmethod
     def _validate_zip_code(zip_code: str) -> bool:

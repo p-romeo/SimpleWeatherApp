@@ -7,6 +7,7 @@ from kivymd.uix.label import MDLabel
 from kivymd.uix.button import MDIconButton
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivy.uix.image import AsyncImage
+from kivymd.uix.spinner import MDSpinner
 
 class WeatherCard(MDCard):
     """
@@ -20,6 +21,7 @@ class WeatherCard(MDCard):
     5. Humidity level
     6. Last update time
     7. Weather icon
+    8. Loading indicator
     
     The card updates automatically when new weather data is received
     and provides interactive elements for refreshing data or removing
@@ -34,8 +36,10 @@ class WeatherCard(MDCard):
     humidity = StringProperty("0")
     icon_url = StringProperty("")
     last_update = StringProperty("")
+    is_loading = False
+    is_favorite = False
     
-    def __init__(self, on_refresh=None, on_remove=None, **kwargs):
+    def __init__(self, on_refresh=None, on_remove=None, on_favorite=None, **kwargs):
         """
         Initialize the weather card component.
         
@@ -48,6 +52,7 @@ class WeatherCard(MDCard):
         Args:
             on_refresh: Callback function for refreshing weather data
             on_remove: Callback function for removing the location
+            on_favorite: Callback function for toggling favorite status
             **kwargs: Additional keyword arguments
         """
         super().__init__(**kwargs)
@@ -60,6 +65,7 @@ class WeatherCard(MDCard):
         
         self.on_refresh = on_refresh
         self.on_remove = on_remove
+        self.on_favorite = on_favorite
         
         # Create UI elements
         header_layout = MDBoxLayout(
@@ -70,7 +76,7 @@ class WeatherCard(MDCard):
         
         location_info = MDBoxLayout(
             orientation="vertical",
-            size_hint_x=0.8
+            size_hint_x=0.7
         )
         
         self.location_label = MDLabel(
@@ -86,11 +92,17 @@ class WeatherCard(MDCard):
         location_info.add_widget(self.zip_label)
         
         button_layout = MDBoxLayout(
-            orientation="vertical",
-            size_hint_x=0.2,
+            orientation="horizontal",
+            size_hint_x=0.3,
             spacing="4dp"
         )
         
+        self.favorite_button = MDIconButton(
+            icon="star-outline",
+            theme_text_color="Custom",
+            text_color=self.theme_cls.primary_color,
+            on_release=self._on_favorite_press
+        )
         refresh_button = MDIconButton(
             icon="refresh",
             theme_text_color="Custom",
@@ -103,6 +115,7 @@ class WeatherCard(MDCard):
             text_color=self.theme_cls.error_color,
             on_release=self._on_remove_press
         )
+        button_layout.add_widget(self.favorite_button)
         button_layout.add_widget(refresh_button)
         button_layout.add_widget(remove_button)
         
@@ -110,12 +123,25 @@ class WeatherCard(MDCard):
         header_layout.add_widget(button_layout)
         self.add_widget(header_layout)
         
-        # Weather info layout
-        weather_layout = MDBoxLayout(
+        # Weather info layout with loading indicator
+        self.weather_layout = MDBoxLayout(
             orientation="horizontal",
             size_hint_y=0.5,
             padding=("8dp", "8dp")
         )
+        
+        # Loading indicator
+        self.loading_layout = MDBoxLayout(
+            orientation="vertical",
+            size_hint=(1, 1),
+            padding=("16dp", "16dp")
+        )
+        self.spinner = MDSpinner(
+            size_hint=(None, None),
+            size=("48dp", "48dp"),
+            pos_hint={'center_x': .5, 'center_y': .5}
+        )
+        self.loading_layout.add_widget(self.spinner)
         
         # Left side - Temperature and description
         temp_layout = MDBoxLayout(
@@ -144,9 +170,9 @@ class WeatherCard(MDCard):
             keep_ratio=True
         )
         
-        weather_layout.add_widget(temp_layout)
-        weather_layout.add_widget(self.icon_image)
-        self.add_widget(weather_layout)
+        self.weather_layout.add_widget(temp_layout)
+        self.weather_layout.add_widget(self.icon_image)
+        self.add_widget(self.weather_layout)
         
         # Details layout
         details_layout = MDBoxLayout(
@@ -187,6 +213,41 @@ class WeatherCard(MDCard):
             icon_url=self._on_icon_url,
             last_update=self._on_last_update
         )
+    
+    def set_loading(self, loading: bool):
+        """
+        Show or hide the loading indicator.
+        
+        Args:
+            loading: True to show loading indicator, False to hide
+        """
+        if loading != self.is_loading:
+            self.is_loading = loading
+            if loading:
+                self.weather_layout.clear_widgets()
+                self.weather_layout.add_widget(self.loading_layout)
+                self.spinner.active = True
+            else:
+                self.spinner.active = False
+                self.weather_layout.clear_widgets()
+                temp_layout = MDBoxLayout(
+                    orientation="vertical",
+                    size_hint_x=0.6
+                )
+                temp_layout.add_widget(self.temp_label)
+                temp_layout.add_widget(self.desc_label)
+                self.weather_layout.add_widget(temp_layout)
+                self.weather_layout.add_widget(self.icon_image)
+    
+    def set_favorite(self, is_favorite: bool):
+        """
+        Set the favorite status of the location.
+        
+        Args:
+            is_favorite: True if location is favorite, False otherwise
+        """
+        self.is_favorite = is_favorite
+        self.favorite_button.icon = "star" if is_favorite else "star-outline"
     
     def _on_location_name(self, instance, value):
         """Update the location name label."""
@@ -229,6 +290,11 @@ class WeatherCard(MDCard):
         """Handle remove button press."""
         if self.on_remove:
             self.on_remove(self.zip_code)
+    
+    def _on_favorite_press(self, instance):
+        """Handle favorite button press."""
+        if self.on_favorite:
+            self.on_favorite(self.zip_code)
     
     def update(self, weather_data):
         """
