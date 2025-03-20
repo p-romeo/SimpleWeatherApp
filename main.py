@@ -45,7 +45,19 @@ def main():
     try:
         # Validate environment
         if not validate_environment():
-            sys.exit(1)
+            # If environment is not valid, try to run the configuration helper
+            try:
+                from weather_app.config_helper import ConfigDialog
+                logger.info("Starting configuration dialog...")
+                ConfigDialog().run()
+                
+                # After configuration, try to validate again
+                if not validate_environment():
+                    logger.error("Configuration incomplete. Please run the app again.")
+                    sys.exit(1)
+            except ImportError:
+                logger.error("Configuration helper not available")
+                sys.exit(1)
         
         # Initialize and run the app
         logger.info("Starting Weather App")

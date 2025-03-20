@@ -16,6 +16,14 @@ setup(
     author_email="your.email@example.com",
     description="A simple weather application using Kivy and WeatherStack API",
     keywords="weather, kivy, gui",
+    entry_points={
+        'console_scripts': [
+            'weather-app=weather_app.main:main',
+        ],
+        'gui_scripts': [
+            'weather-app-gui=weather_app.main:main',
+        ],
+    },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: End Users/Desktop",
@@ -25,5 +33,11 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Operating System :: Microsoft :: Windows",
+        "Environment :: Win32 (MS Windows)",
     ],
+    package_data={
+        'weather_app': ['*.kv', '*.png', '*.ico'],
+    },
+    include_package_data=True,
 ) 
