@@ -77,8 +77,10 @@ class LocationStorage:
             IOError: If there's an error writing to the file
         """
         try:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(self.storage_file), exist_ok=True)
+            # Ensure directory exists when a directory part is provided
+            directory = os.path.dirname(self.storage_file)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
             
             with open(self.storage_file, 'w') as f:
                 json.dump(self.locations, f, indent=2)
@@ -150,14 +152,14 @@ class LocationStorage:
                 raise
         return False
     
-    def get_locations(self) -> Dict[str, str]:
+    def get_locations(self) -> List[str]:
         """
-        Get all stored locations as a dictionary of zip_code: location_name pairs
-        
+        Get all stored location ZIP codes.
+
         Returns:
-            Dict[str, str]: Dictionary mapping ZIP codes to location names
+            List[str]: A list of stored ZIP codes
         """
-        return {zip_code: data['name'] for zip_code, data in self.locations.items()}
+        return list(self.locations.keys())
     
     def get_location_details(self, zip_code: str) -> Optional[Dict[str, str]]:
         """
