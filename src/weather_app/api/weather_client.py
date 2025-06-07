@@ -27,7 +27,7 @@ class WeatherData:
     
     Attributes:
         temperature: Current temperature in Fahrenheit
-        location: Location name
+        location_name: Location name
         description: Weather description
         humidity: Humidity percentage
         wind_speed: Wind speed in mph
@@ -36,7 +36,7 @@ class WeatherData:
         zip_code: ZIP code for the location
     """
     temperature: float
-    location: str
+    location_name: str
     description: str
     humidity: int
     wind_speed: float
@@ -259,7 +259,7 @@ class WeatherStackClient:
             
             return WeatherData(
                 temperature=float(current['temperature']),
-                location=location['name'],
+                location_name=location['name'],
                 description=current['weather_descriptions'][0],
                 humidity=int(current['humidity']),
                 wind_speed=float(current['wind_speed']),
